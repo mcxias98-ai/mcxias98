@@ -1,223 +1,331 @@
 #!/bin/bash
 
-# Установка русского шрифта для консоли
-setfont cyr-sun16 2>/dev/null || echo "Русский шрифт не доступен, продолжаем..."
+# Скрипт автоматической установки Arch Linux с настройками пользователя
+# ВНИМАНИЕ: Этот скрипт полностью уничтожит данные на выбранном диске!
 
-# Проверка на UEFI
-if [ -d /sys/firmware/efi ]; then
-    echo "Обнаружена UEFI система"
-    UEFI_MODE=true
-else
-    echo "Обнаружена BIOS система"
-    UEFI_MODE=false
-fi
+set -e
+
+# Цвета для вывода
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+NC='\033[0m' # No Color
+
+# Переменные по умолчанию
+HOSTNAME="archlinux"
+USERNAME="archuser"
+TIMEZONE="Europe/Moscow"
+LANGUAGE="en_US.UTF-8"
+ADDITIONAL_PACKAGES=""
+
+# Функции для вывода
+print_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
+print_success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
+print_warning() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
+print_error() { echo -e "${RED}[ERROR]${NC} $1"; }
+print_input() { echo -e "${CYAN}[INPUT]${NC} $1"; }
+
+# Запрос данных у пользователя
+get_user_input() {
+    print_input "=== НАСТРОЙКА УСТАНОВКИ ==="
+    
+    # Имя компьютера
+    read -p "Введите имя компьютера [по умолчанию: $HOSTNAME]: " input_hostname
+    HOSTNAME=${input_hostname:-$HOSTNAME}
+    
+    # Имя пользователя
+    read -p "Введите имя пользователя [по умолчанию: $USERNAME]: " input_username
+    USERNAME=${input_username:-$USERNAME}
+    
+    # Пароль root
+    while true; do
+        read -sp "Введите пароль root: " root_password
+        echo
+        if [ -n "$root_password" ]; then
+            read -sp "Повторите пароль root: " root_password_confirm
+            echo
+            if [ "$root_password" = "$root_password_confirm" ]; then
+                break
+            else
+                print_error "Пароли не совпадают!"
+            fi
+        else
+            print_error "Пароль не может быть пустым!"
+        fi
+    done
+    
+    # Пароль пользователя
+    while true; do
+        read -sp "Введите пароль для пользователя $USERNAME: " user_password
+        echo
+        if [ -n "$user_password" ]; then
+            read -sp "Повторите пароль для пользователя $USERNAME: " user_password_confirm
+            echo
+            if [ "$user_password" = "$user_password_confirm" ]; then
+                break
+            else
+                print_error "Пароли не совпадают!"
+            fi
+        else
+            print_error "Пароль не может быть пустым!"
+        fi
+    done
+    
+    # Часовой пояс
+    read -p "Введите часовой пояс [по умолчанию: $TIMEZONE]: " input_timezone
+    TIMEZONE=${input_timezone:-$TIMEZONE}
+    
+    # Выбор загрузчика
+    print_input "Выберите загрузчик:"
+    echo "1) systemd-boot (рекомендуется для UEFI)"
+    echo "2) GRUB (универсальный)"
+    read -p "Введите номер [1-2]: " bootloader_choice
+    case $bootloader_choice in
+        1) BOOTLOADER="systemd-boot" ;;
+        2) BOOTLOADER="grub" ;;
+        *) BOOTLOADER="systemd-boot" ;;
+    esac
+    
+    # Выбор графической оболочки
+    print_input "Выберите графическую оболочку:"
+    echo "1) GNOME"
+    echo "2) KDE Plasma"
+    echo "3) XFCE"
+    echo "4) LXQt"
+    echo "5) Cinnamon"
+    echo "6) Только консоль (без графики)"
+    read -p "Введите номер [1-6]: " de_choice
+    case $de_choice in
+        1) DE="gnome" ;;
+        2) DE="kde" ;;
+        3) DE="xfce" ;;
+        4) DE="lxqt" ;;
+        5) DE="cinnamon" ;;
+        6) DE="none" ;;
+        *) DE="none" ;;
+    esac
+    
+    # Дополнительные пакеты
+    print_input "Введите дополнительные пакеты для установки (через пробел):"
+    print_info "Например: firefox vim git curl wget"
+    read -p "Дополнительные пакеты: " ADDITIONAL_PACKAGES
+    
+    # Подтверждение
+    echo
+    print_warning "=== ПОДТВЕРЖДЕНИЕ НАСТРОЕК ==="
+    echo "Имя компьютера: $HOSTNAME"
+    echo "Имя пользователя: $USERNAME"
+    echo "Часовой пояс: $TIMEZONE"
+    echo "Загрузчик: $BOOTLOADER"
+    echo "Графическая оболочка: $DE"
+    echo "Дополнительные пакеты: $ADDITIONAL_PACKAGES"
+    echo
+    read -p "Продолжить установку? (y/N): " final_confirm
+    
+    if [[ $final_confirm != "y" && $final_confirm != "Y" ]]; then
+        print_info "Установка отменена"
+        exit 0
+    fi
+}
 
 # Функция для выбора графической оболочки
-select_desktop() {
-    echo ""
-    echo "Выберите графическую оболочку:"
-    echo "1) KDE Plasma (полная среда)"
-    echo "2) GNOME (современная среда)"
-    echo "3) XFCE (легковесная среда)"
-    echo "4) LXQt (очень легкая среда)"
-    echo "5) Только базовый Xorg (без DE)"
-    echo "6) Только консоль (без графики)"
-    echo ""
-    
-    read -p "Введите номер варианта (1-6): " DE_CHOICE
-    
-    case $DE_CHOICE in
-        1)
-            DE_PACKAGES="plasma-meta konsole kate dolphin discover"
-            DM_PACKAGE="sddm"
-            DESKTOP_NAME="KDE Plasma"
+get_de_packages() {
+    case $DE in
+        "gnome")
+            DE_PACKAGES="gnome gnome-extra gdm"
+            DM_SERVICE="gdm"
             ;;
-        2)
-            DE_PACKAGES="gnome gnome-extra"
-            DM_PACKAGE="gdm"
-            DESKTOP_NAME="GNOME"
+        "kde")
+            DE_PACKAGES="plasma plasma-meta plasma-wayland-session sddm"
+            DM_SERVICE="sddm"
             ;;
-        3)
+        "xfce")
             DE_PACKAGES="xfce4 xfce4-goodies lightdm lightdm-gtk-greeter"
-            DM_PACKAGE="lightdm"
-            DESKTOP_NAME="XFCE"
+            DM_SERVICE="lightdm"
             ;;
-        4)
-            DE_PACKAGES="lxqt breeze-icons lightdm lightdm-gtk-greeter"
-            DM_PACKAGE="lightdm"
-            DESKTOP_NAME="LXQt"
+        "lxqt")
+            DE_PACKAGES="lxqt sddm"
+            DM_SERVICE="sddm"
             ;;
-        5)
-            DE_PACKAGES="xorg-server xorg-xinit"
-            DM_PACKAGE=""
-            DESKTOP_NAME="Xorg only"
+        "cinnamon")
+            DE_PACKAGES="cinnamon lightdm lightdm-gtk-greeter"
+            DM_SERVICE="lightdm"
             ;;
-        6)
+        "none")
             DE_PACKAGES=""
-            DM_PACKAGE=""
-            DESKTOP_NAME="Console only"
-            ;;
-        *)
-            echo "Неверный выбор, используется KDE Plasma по умолчанию"
-            DE_PACKAGES="plasma-meta konsole kate dolphin discover"
-            DM_PACKAGE="sddm"
-            DESKTOP_NAME="KDE Plasma"
-            ;;
-    esac
-    
-    echo "Выбрана: $DESKTOP_NAME"
-}
-
-# Функция для выбора типа загрузки
-select_boot_style() {
-    echo ""
-    echo "Выберите стиль загрузки:"
-    echo "1) Тихая загрузка (без сообщений, только лого)"
-    echo "2) Стандартная загрузка с сообщениями (рекомендуется для отладки)"
-    echo ""
-    
-    read -p "Введите номер варианта (1-2): " BOOT_CHOICE
-    
-    case $BOOT_CHOICE in
-        1)
-            BOOT_STYLE="quiet"
-            echo "Выбрана тихая загрузка"
-            ;;
-        2)
-            BOOT_STYLE="verbose"
-            echo "Выбрана стандартная загрузка с сообщениями"
-            ;;
-        *)
-            BOOT_STYLE="verbose"
-            echo "Неверный выбор, используется стандартная загрузка"
+            DM_SERVICE=""
             ;;
     esac
 }
 
-# Функция для выбора дополнительных пакетов
-select_additional_packages() {
-    echo ""
-    echo "Дополнительные пакеты:"
-    echo "Базовые: networkmanager sudo nano vim git openssh"
-    
-    if [ -n "$DE_PACKAGES" ] && [ "$DE_PACKAGES" != "xorg-server xorg-xinit" ]; then
-        read -p "Установить дополнительные офисные приложения? (y/N): " OFFICE
-        read -p "Установить мультимедиа приложения? (y/N): " MEDIA
-        read -p "Установить системные утилиты? (y/N): " UTILS
-    fi
-    
-    ADDITIONAL_PACKAGES="networkmanager sudo nano vim git openssh"
-    
-    if [ "$OFFICE" = "y" ] || [ "$OFFICE" = "Y" ]; then
-        ADDITIONAL_PACKAGES+=" libreoffice-fresh-ru"
-    fi
-    
-    if [ "$MEDIA" = "y" ] || [ "$MEDIA" = "Y" ]; then
-        ADDITIONAL_PACKAGES+=" vlc firefox firefox-i18n-ru"
-    fi
-    
-    if [ "$UTILS" = "y" ] || [ "$UTILS" = "Y" ]; then
-        ADDITIONAL_PACKAGES+=" htop neofetch curl wget"
+# Проверка на UEFI
+check_uefi() {
+    if [[ ! -d /sys/firmware/efi/efivars ]]; then
+        print_error "Система не загружена в UEFI режиме!"
+        if [[ $BOOTLOADER == "systemd-boot" ]]; then
+            print_warning "systemd-boot требует UEFI. Переключаю на GRUB."
+            BOOTLOADER="grub"
+        fi
+    else
+        print_success "UEFI режим обнаружен"
     fi
 }
 
-# Функция для выбора диска
+# Выбор диска
 select_disk() {
-    echo "Доступные диски:"
+    print_info "Доступные диски:"
     lsblk -d -o NAME,SIZE,MODEL
-    echo ""
+    echo
     read -p "Введите имя диска для установки (например: sda, nvme0n1): " DISK
     DISK_PATH="/dev/$DISK"
+    
+    if [[ ! -b $DISK_PATH ]]; then
+        print_error "Диск $DISK_PATH не найден!"
+        exit 1
+    fi
 }
 
-# Функция для разметки диска
+# Разметка диска
 partition_disk() {
-    echo "Разметка диска $DISK_PATH..."
+    print_info "Разметка диска $DISK_PATH..."
     
-    if [ "$UEFI_MODE" = true ]; then
-        # UEFI разметка
-        parted -s $DISK_PATH mklabel gpt
-        parted -s $DISK_PATH mkpart primary fat32 1MiB 513MiB
-        parted -s $DISK_PATH set 1 esp on
-        parted -s $DISK_PATH mkpart primary ext4 513MiB 100%
-    else
-        # BIOS разметка
-        parted -s $DISK_PATH mklabel msdos
-        parted -s $DISK_PATH mkpart primary ext4 1MiB 100%
-        parted -s $DISK_PATH set 1 boot on
+    # Очистка таблицы разделов
+    sgdisk -Z $DISK_PATH
+    
+    # Создание разделов
+    # EFI раздел (500M)
+    sgdisk -n 1:0:+500M -t 1:ef00 $DISK_PATH
+    # Root раздел (оставшееся место)
+    sgdisk -n 2:0:0 -t 2:8300 $DISK_PATH
+    
+    # Swap раздел (опционально)
+    read -p "Создать swap раздел? (y/N): " create_swap
+    if [[ $create_swap == "y" || $create_swap == "Y" ]]; then
+        sgdisk -n 3:0:+4G -t 3:8200 $DISK_PATH
+        HAS_SWAP=true
     fi
     
-    # Обновляем информацию о разделах
+    # Обновление информации о разделах
     partprobe $DISK_PATH
     sleep 2
 }
 
-# Функция для форматирования разделов
+# Форматирование разделов
 format_partitions() {
-    echo "Форматирование разделов..."
+    print_info "Форматирование разделов..."
     
-    if [ "$UEFI_MODE" = true ]; then
-        EFI_PART="${DISK_PATH}1"
-        ROOT_PART="${DISK_PATH}2"
-        
-        mkfs.fat -F32 $EFI_PART
-        mkfs.ext4 $ROOT_PART
-    else
-        ROOT_PART="${DISK_PATH}1"
-        mkfs.ext4 $ROOT_PART
+    # EFI раздел
+    EFI_PART="${DISK_PATH}1"
+    mkfs.fat -F32 $EFI_PART
+    
+    # Root раздел
+    ROOT_PART="${DISK_PATH}2"
+    mkfs.ext4 $ROOT_PART
+    
+    # Swap раздел
+    if [[ $HAS_SWAP == true ]]; then
+        SWAP_PART="${DISK_PATH}3"
+        mkswap $SWAP_PART
+        swapon $SWAP_PART
     fi
+    
+    print_success "Разделы отформатированы"
 }
 
-# Функция для монтирования разделов
+# Монтирование разделов
 mount_partitions() {
-    echo "Монтирование разделов..."
+    print_info "Монтирование разделов..."
     
     mount $ROOT_PART /mnt
+    mkdir -p /mnt/boot
+    mount $EFI_PART /mnt/boot
     
-    if [ "$UEFI_MODE" = true ]; then
-        mkdir -p /mnt/boot/efi
-        mount $EFI_PART /mnt/boot/efi
-    fi
+    print_success "Разделы смонтированы"
 }
 
-# Функция для установки базовой системы
+# Установка базовой системы
 install_base() {
-    echo "Установка базовой системы..."
-    pacstrap /mnt base base-devel linux linux-firmware
+    print_info "Установка базовой системы..."
     
-    echo "Генерация fstab..."
-    genfstab -U /mnt >> /mnt/etc/fstab
+    local base_packages="base base-devel linux linux-firmware linux-headers efibootmgr sudo networkmanager nano git"
+    
+    if [[ $BOOTLOADER == "grub" ]]; then
+        base_packages="$base_packages grub efibootmgr"
+    fi
+    
+    pacstrap /mnt $base_packages
+    
+    print_success "Базовая система установлена"
 }
 
-# Функция для настройки системы
-configure_system() {
-    echo "Настройка системы..."
-    
-    # Создаем скрипт для chroot
-    cat > /mnt/install_chroot.sh << 'EOF'
-#!/bin/bash
+# Генерация fstab
+generate_fstab() {
+    genfstab -U /mnt >> /mnt/fstab
+    print_success "fstab сгенерирован"
+}
 
-# Установка русского шрифта в устанавливаемой системе
-pacman -S --noconfirm terminus-font
+# Настройка systemd-boot
+setup_systemd_boot() {
+    arch-chroot /mnt /bin/bash <<EOF
+bootctl install
+
+# Конфигурация загрузчика
+cat > /boot/loader/loader.conf << LOADER_EOF
+default arch.conf
+timeout 3
+console-mode keep
+editor no
+LOADER_EOF
+
+# Получение PARTUUID root раздела
+ROOT_PARTUUID=\$(blkid -s PARTUUID -o value $ROOT_PART)
+
+# Создание записи загрузки
+cat > /boot/loader/entries/arch.conf << ENTRY_EOF
+title Arch Linux
+linux /vmlinuz-linux
+initrd /initramfs-linux.img
+options root=PARTUUID=\$ROOT_PARTUUID rw quiet
+ENTRY_EOF
+
+# Резервная запись
+cat > /boot/loader/entries/arch-fallback.conf << FALLBACK_EOF
+title Arch Linux (fallback)
+linux /vmlinuz-linux
+initrd /initramfs-linux-fallback.img
+options root=PARTUUID=\$ROOT_PARTUUID rw
+FALLBACK_EOF
+EOF
+}
+
+# Настройка GRUB
+setup_grub() {
+    arch-chroot /mnt /bin/bash <<EOF
+grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=GRUB
+grub-mkconfig -o /boot/grub/grub.cfg
+EOF
+}
+
+# Настройка системы в chroot
+configure_system() {
+    print_info "Настройка системы..."
+    
+    arch-chroot /mnt /bin/bash <<EOF
+set -e
 
 # Настройка времени
-ln -sf /usr/share/zoneinfo/Europe/Moscow /etc/localtime
+ln -sf /usr/share/zoneinfo/$TIMEZONE /etc/localtime
 hwclock --systohc
 
 # Локализация
 echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen
 echo "ru_RU.UTF-8 UTF-8" >> /etc/locale.gen
 locale-gen
+echo "LANG=$LANGUAGE" > /etc/locale.conf
 
-# Устанавливаем русскую локаль по умолчанию
-echo "LANG=ru_RU.UTF-8" > /etc/locale.conf
-
-# Настройка клавиатуры
-echo "KEYMAP=ru" > /etc/vconsole.conf
-echo "FONT=cyr-sun16" >> /etc/vconsole.conf
-
-# Настройка сети
-read -p "Введите имя компьютера: " HOSTNAME
+# Настройка хоста
 echo "$HOSTNAME" > /etc/hostname
 
 cat > /etc/hosts << HOSTS_EOF
@@ -226,179 +334,96 @@ cat > /etc/hosts << HOSTS_EOF
 127.0.1.1   $HOSTNAME.localdomain $HOSTNAME
 HOSTS_EOF
 
-# Настройка параметров загрузки
-echo "Настройка параметров загрузки..."
+# Пароль root
+echo "root:$root_password" | chpasswd
 
-# Установка загрузчика
-if [ -d /sys/firmware/efi ]; then
-    pacman -S --noconfirm grub efibootmgr
-    grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=GRUB
-else
-    pacman -S --noconfirm grub
-    grub-install --target=i386-pc /dev/${DISK}
-fi
-
-# Настройка параметров GRUB в зависимости от выбора
-if [ "$BOOT_STYLE" = "quiet" ]; then
-    # Безопасная тихая загрузка без Plymouth
-    sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT="quiet splash"/' /etc/default/grub
-else
-    # Стандартная загрузка с сообщениями
-    sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT=""/' /etc/default/grub
-fi
-
-# Обновляем конфиг GRUB
-grub-mkconfig -o /boot/grub/grub.cfg
-
-# Установка графической оболочки и дополнительных пакетов
-if [ -n "$DE_PACKAGES" ]; then
-    echo "Установка $DESKTOP_NAME..."
-    pacman -S --noconfirm xorg-server xorg-xinit $DE_PACKAGES
-    
-    # Добавляем русскую локализацию для KDE
-    if echo "$DE_PACKAGES" | grep -q "plasma"; then
-        pacman -S --noconfirm plasma-meta-l10n-ru
-    fi
-fi
-
-if [ -n "$ADDITIONAL_PACKAGES" ]; then
-    echo "Установка дополнительных пакетов..."
-    pacman -S --noconfirm $ADDITIONAL_PACKAGES
-fi
-
-# Включение служб
-systemctl enable NetworkManager
-
-if [ -n "$DM_PACKAGE" ]; then
-    systemctl enable $DM_PACKAGE
-fi
-
-# Настройка пользователя
-read -p "Введите имя пользователя: " USERNAME
+# Создание пользователя
 useradd -m -G wheel -s /bin/bash $USERNAME
-echo "Установите пароль для пользователя $USERNAME:"
-passwd $USERNAME
+echo "$USERNAME:$user_password" | chpasswd
 
 # Настройка sudo
 echo "%wheel ALL=(ALL) ALL" >> /etc/sudoers
 
-# Установка пароля root
-echo "Установите пароль root:"
-passwd
-
-# Создание файла xinitrc для пользователя
-if [ -n "$DE_PACKAGES" ] && [ "$DM_PACKAGE" = "" ]; then
-    cat > /home/$USERNAME/.xinitrc << 'XINIT_EOF'
-#!/bin/sh
-
-# Автоматический запуск выбранной DE
-case "$DE_PACKAGES" in
-    *plasma*)
-        exec startplasma-x11
-        ;;
-    *gnome*)
-        exec gnome-session
-        ;;
-    *xfce*)
-        exec startxfce4
-        ;;
-    *lxqt*)
-        exec startlxqt
-        ;;
-    *)
-        # Запуск twm по умолчанию
-        exec twm
-        ;;
-esac
-XINIT_EOF
-
-    chown $USERNAME:$USERNAME /home/$USERNAME/.xinitrc
-    chmod +x /home/$USERNAME/.xinitrc
+# Установка загрузчика
+if [[ "$BOOTLOADER" == "systemd-boot" ]]; then
+    setup_systemd_boot
+else
+    setup_grub
 fi
 
-# Создание приветственного файла
-cat > /home/$USERNAME/README.txt << WELCOME_EOF
-Добро пожаловать в Arch Linux!
+# Установка графической оболочки
+if [[ "$DE" != "none" ]]; then
+    pacman -S --noconfirm xorg xorg-server $DE_PACKAGES
+    systemctl enable $DM_SERVICE
+fi
 
-Установленная система:
-- Графическая оболочка: $DESKTOP_NAME
-- Стиль загрузки: $BOOT_STYLE
-- Дисплей менеджер: $DM_PACKAGE
-- Пользователь: $USERNAME
+# Установка дополнительных пакетов
+if [[ -n "$ADDITIONAL_PACKAGES" ]]; then
+    pacman -S --noconfirm $ADDITIONAL_PACKAGES
+fi
 
-Если система зависает при загрузке:
-1. При загрузке нажмите Esc чтобы увидеть сообщения
-2. Или выберете в GRUB вариант с recovery mode
-3. В консоли выполните: systemctl disable plymouth (если установлен)
+# Генерация initramfs
+mkinitcpio -P
 
-Для отключения тихой загрузки:
-Отредактируйте /etc/default/grub и уберите параметр "quiet splash"
-Затем выполните: grub-mkconfig -o /boot/grub/grub.cfg
+# Включение NetworkManager
+systemctl enable NetworkManager
 
-WELCOME_EOF
-
-chown $USERNAME:$USERNAME /home/$USERNAME/README.txt
-
+print_success "Система настроена"
 EOF
-
-    chmod +x /mnt/install_chroot.sh
-    
-    # Передаем переменные в chroot
-    echo "export DISK=$DISK" > /mnt/chroot_vars.sh
-    echo "export ROOT_PART='$ROOT_PART'" >> /mnt/chroot_vars.sh
-    echo "export DE_PACKAGES='$DE_PACKAGES'" >> /mnt/chroot_vars.sh
-    echo "export DM_PACKAGE='$DM_PACKAGE'" >> /mnt/chroot_vars.sh
-    echo "export DESKTOP_NAME='$DESKTOP_NAME'" >> /mnt/chroot_vars.sh
-    echo "export ADDITIONAL_PACKAGES='$ADDITIONAL_PACKAGES'" >> /mnt/chroot_vars.sh
-    echo "export BOOT_STYLE='$BOOT_STYLE'" >> /mnt/chroot_vars.sh
-    chmod +x /mnt/chroot_vars.sh
-    
-    # Выполняем настройку в chroot
-    arch-chroot /mnt /bin/bash -c "source /chroot_vars.sh && /install_chroot.sh"
 }
 
-# Функция для очистки
-cleanup() {
-    echo "Очистка..."
-    rm -f /mnt/install_chroot.sh /mnt/chroot_vars.sh
-    umount -R /mnt
-    echo "Установка завершена!"
-    echo "Графическая оболочка: $DESKTOP_NAME"
-    echo "Стиль загрузки: $BOOT_STYLE"
-    echo "Перезагрузите систему: reboot"
-}
-
-# Основной процесс установки
+# Основная функция
 main() {
-    echo "=== Установка Arch Linux ==="
+    print_warning "ВНИМАНИЕ: Этот скрипт уничтожит все данные на выбранном диске!"
+    read -p "Продолжить? (y/N): " confirm
     
-    # Проверка интернета
-    if ! ping -c 1 archlinux.org &> /dev/null; then
-        echo "Ошибка: Нет подключения к интернету!"
-        exit 1
-    fi
-    
-    # Обновление ключей
-    pacman -Sy --noconfirm archlinux-keyring
-    
-    select_desktop
-    select_boot_style
-    select_additional_packages
-    select_disk
-    
-    read -p "Продолжить установку на $DISK_PATH с $DESKTOP_NAME? (y/N): " CONFIRM
-    if [ "$CONFIRM" != "y" ] && [ "$CONFIRM" != "Y" ]; then
-        echo "Установка отменена."
+    if [[ $confirm != "y" && $confirm != "Y" ]]; then
+        print_info "Установка отменена"
         exit 0
     fi
     
+    # Получение данных от пользователя
+    get_user_input
+    get_de_packages
+    
+    # Проверки
+    check_uefi
+    
+    # Выбор и подготовка диска
+    select_disk
     partition_disk
     format_partitions
     mount_partitions
+    
+    # Установка системы
     install_base
+    generate_fstab
     configure_system
-    cleanup
+    
+    # Завершение
+    print_info "Завершение установки..."
+    umount -R /mnt
+    
+    print_success "Установка завершена!"
+    echo
+    print_info "=== ДАННЫЕ ДЛЯ ВХОДА ==="
+    print_info "Имя компьютера: $HOSTNAME"
+    print_info "Пользователь: $USERNAME"
+    print_info "Пароль пользователя: (установленный вами)"
+    print_info "Пароль root: (установленный вами)"
+    echo
+    print_info "Выполните: reboot"
+    print_info "После перезагрузки войдите как: $USERNAME"
+    
+    if [[ $DE != "none" ]]; then
+        print_info "Графический интерфейс: $DE"
+    fi
 }
 
-# Запуск основной функции
-main "$@"
+# Запуск скрипта
+if [[ $EUID -eq 0 ]]; then
+    main
+else
+    print_error "Этот скрипт должен запускаться от root!"
+    exit 1
+fi
