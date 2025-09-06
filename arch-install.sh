@@ -100,7 +100,7 @@ select_boot_style() {
 select_additional_packages() {
     echo ""
     echo "Дополнительные пакеты:"
-    echo "Базовые: networkmanager sudo nano vim git openssh"
+    echo "Базовые: networkmanager sudo konsole nano vim git openssh"
     
     if [ -n "$DE_PACKAGES" ] && [ "$DE_PACKAGES" != "xorg-server xorg-xinit" ]; then
         read -p "Установить дополнительные офисные приложения? (y/N): " OFFICE
@@ -119,7 +119,7 @@ select_additional_packages() {
     fi
     
     if [ "$UTILS" = "y" ] || [ "$UTILS" = "Y" ]; then
-        ADDITIONAL_PACKAGES+=" htop neofetch curl wget"
+        ADDITIONAL_PACKAGES+=" htop ark neofetch curl wget kate dolphin"
     fi
 }
 
