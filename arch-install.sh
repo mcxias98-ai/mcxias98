@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Установка русского шрифта для консоли
+setfont cyr-sun16 2>/dev/null || echo "Русский шрифт не доступен, продолжаем..."
+
 # Проверка на UEFI
 if [ -d /sys/firmware/efi ]; then
     echo "Обнаружена UEFI система"
@@ -69,29 +72,24 @@ select_desktop() {
 select_boot_style() {
     echo ""
     echo "Выберите стиль загрузки:"
-    echo "1) Тихая загрузка с лого Arch Linux (рекомендуется)"
-    echo "2) Тихая загрузка с лого производителя оборудования"
-    echo "3) Стандартная загрузка с сообщениями"
+    echo "1) Тихая загрузка (без сообщений, только лого)"
+    echo "2) Стандартная загрузка с сообщениями (рекомендуется для отладки)"
     echo ""
     
-    read -p "Введите номер варианта (1-3): " BOOT_CHOICE
+    read -p "Введите номер варианта (1-2): " BOOT_CHOICE
     
     case $BOOT_CHOICE in
         1)
-            BOOT_STYLE="arch_logo"
-            echo "Выбрана тихая загрузка с лого Arch Linux"
+            BOOT_STYLE="quiet"
+            echo "Выбрана тихая загрузка"
             ;;
         2)
-            BOOT_STYLE="vendor_logo"
-            echo "Выбрана тихая загрузка с лого производителя"
-            ;;
-        3)
             BOOT_STYLE="verbose"
             echo "Выбрана стандартная загрузка с сообщениями"
             ;;
         *)
-            BOOT_STYLE="arch_logo"
-            echo "Неверный выбор, используется тихая загрузка с лого Arch Linux"
+            BOOT_STYLE="verbose"
+            echo "Неверный выбор, используется стандартная загрузка"
             ;;
     esac
 }
@@ -100,7 +98,7 @@ select_boot_style() {
 select_additional_packages() {
     echo ""
     echo "Дополнительные пакеты:"
-    echo "Базовые: networkmanager sudo konsole nano vim git openssh"
+    echo "Базовые: networkmanager sudo nano vim git openssh"
     
     if [ -n "$DE_PACKAGES" ] && [ "$DE_PACKAGES" != "xorg-server xorg-xinit" ]; then
         read -p "Установить дополнительные офисные приложения? (y/N): " OFFICE
@@ -115,11 +113,11 @@ select_additional_packages() {
     fi
     
     if [ "$MEDIA" = "y" ] || [ "$MEDIA" = "Y" ]; then
-        ADDITIONAL_PACKAGES+=" vlc firefox"
+        ADDITIONAL_PACKAGES+=" vlc firefox firefox-i18n-ru"
     fi
     
     if [ "$UTILS" = "y" ] || [ "$UTILS" = "Y" ]; then
-        ADDITIONAL_PACKAGES+=" htop ark neofetch curl wget kate dolphin"
+        ADDITIONAL_PACKAGES+=" htop neofetch curl wget"
     fi
 }
 
@@ -191,66 +189,16 @@ install_base() {
     genfstab -U /mnt >> /mnt/etc/fstab
 }
 
-# Функция для настройки тихой загрузки (ДОБАВЛЕНО НАСТРОЙКА ТИХОЙ ЗАГРУЗКИ)
-setup_quiet_boot() {
-    echo "Настройка тихой загрузки..."
-    
-    # Создаем каталог для Plymouth (если нужно)
-    mkdir -p /mnt/usr/share/plymouth/themes
-    
-    # Копируем тему Arch Linux для Plymouth
-    cat > /mnt/usr/share/plymouth/themes/arch-logo/arch-logo.plymouth << 'PLYMOUTH_EOF'
-[Plymouth Theme]
-Name=Arch Logo
-Description=A theme that features the Arch Linux logo
-ModuleName=script
-
-[script]
-ImageDir=/usr/share/plymouth/themes/arch-logo
-ScriptFile=/usr/share/plymouth/themes/arch-logo/arch-logo.script
-PLYMOUTH_EOF
-
-    cat > /mnt/usr/share/plymouth/themes/arch-logo/arch-logo.script << 'SCRIPT_EOF'
-wallpaper_image = Image("arch-logo.png");
-background_color = (0.0, 0.0, 0.0);
-logo_sprite = Sprite();
-logo_sprite.SetImage(wallpaper_image);
-
-Window.SetBackgroundTopColor (background_color);
-Window.SetBackgroundBottomColor (background_color);
-
-fun message_callback (text) {
-}
-
-Plymouth.SetRefreshFunction (function () {
-    logo_width = logo_sprite.GetWidth();
-    logo_height = logo_sprite.GetHeight();
-    x = Window.GetWidth() / 2 - logo_width / 2;
-    y = Window.GetHeight() / 2 - logo_height / 2;
-    logo_sprite.SetX (x);
-    logo_sprite.SetY (y);
-});
-
-Plymouth.SetMessageFunction (message_callback);
-SCRIPT_EOF
-
-    # Создаем простой логотип Arch (базовый PNG в виде текстового файла)
-    # В реальной системе лучше использовать готовые темы из AUR
-    echo "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAABnRSTlMAAAAAAABupgeRAAAACXBIWXMAAA7EAAAOxAGVKw4bAAABTUlEQVRoge3aQW7CMBBA0T8pF6HiAFQcgIoDUHGAVhyAigNQcYBWHICKA1BxgFYcgIoDUHGAKQ5AxQGoOMAUX4CKA1BxgCm+ABUHoOIAU3wBKg5AxQGm+AJUHICKA0zxBag4ABUHmOILUHEAKg4wxReg4gBUHGCKL0DFAag4wBRfgIoDUHGAKb4AFQeg4gBTfAEqDkDFAab4AlQcgIoDTPEFqDgAFQeY4gtQcQAqDjDFF6DiAFQcYIovQMUBqDjAFF+AigNQcYApvgAVB6DiAFN8ASoOQMUBpvgCVByAigNM8QWoOAAVB5jiC1BxACoOMMUXoOIAVBxgii9AxQGoOMAUX4CKA1BxgCm+ABUHoOIAU3wBKg5AxQGm+AJUHICKA0zxBag4ABUHmOILUHEAKg4wxReg4gBUHGCKL0DFAag4wBRfgIoDUHGAKb4AFQeg4gBTfAEqDkDFAab4AlQcgIoDTPEFqDgAFQeY4n8BdD1QpVl5p5AAAAAASUVORK5CYII=" | base64 -d > /mnt/usr/share/plymouth/themes/arch-logo/arch-logo.png 2>/dev/null || true
-}
-
 # Функция для настройки системы
 configure_system() {
     echo "Настройка системы..."
     
-    # Настраиваем тихую загрузку если выбрано (ДОБАВЛЕНО)
-    if [ "$BOOT_STYLE" != "verbose" ]; then
-        setup_quiet_boot
-    fi
-    
     # Создаем скрипт для chroot
     cat > /mnt/install_chroot.sh << 'EOF'
 #!/bin/bash
+
+# Установка русского шрифта в устанавливаемой системе
+pacman -S --noconfirm terminus-font
 
 # Настройка времени
 ln -sf /usr/share/zoneinfo/Europe/Moscow /etc/localtime
@@ -260,7 +208,13 @@ hwclock --systohc
 echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen
 echo "ru_RU.UTF-8 UTF-8" >> /etc/locale.gen
 locale-gen
+
+# Устанавливаем русскую локаль по умолчанию
 echo "LANG=ru_RU.UTF-8" > /etc/locale.conf
+
+# Настройка клавиатуры
+echo "KEYMAP=ru" > /etc/vconsole.conf
+echo "FONT=cyr-sun16" >> /etc/vconsole.conf
 
 # Настройка сети
 read -p "Введите имя компьютера: " HOSTNAME
@@ -272,65 +226,39 @@ cat > /etc/hosts << HOSTS_EOF
 127.0.1.1   $HOSTNAME.localdomain $HOSTNAME
 HOSTS_EOF
 
-# НАСТРОЙКА ТИХОЙ ЗАГРУЗКИ - ДОБАВЛЕНО ПАРАМЕТРЫ ЯДРА
+# Настройка параметров загрузки
 echo "Настройка параметров загрузки..."
-
-# Создаем файл для настроек ядра
-cat > /etc/kernel/cmdline << CMDLINE_EOF
-root=UUID=$(blkid -s UUID -o value $ROOT_PART) rw
-CMDLINE_EOF
-
-# Добавляем параметры для тихой загрузки
-if [ "$BOOT_STYLE" != "verbose" ]; then
-    echo "quiet splash loglevel=3 vt.global_cursor_default=0" >> /etc/kernel/cmdline
-    
-    if [ "$BOOT_STYLE" = "arch_logo" ]; then
-        echo "plymouth.enable=1 plymouth.theme=arch-logo" >> /etc/kernel/cmdline
-    else
-        echo "plymouth.enable=0" >> /etc/kernel/cmdline
-    fi
-fi
 
 # Установка загрузчика
 if [ -d /sys/firmware/efi ]; then
     pacman -S --noconfirm grub efibootmgr
     grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=GRUB
-    
-    # Настройка GRUB для тихой загрузки - ДОБАВЛЕНО
-    if [ "$BOOT_STYLE" != "verbose" ]; then
-        sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT="quiet splash loglevel=3 vt.global_cursor_default=0"/' /etc/default/grub
-        sed -i 's/^#GRUB_TERMINAL_OUTPUT=console/GRUB_TERMINAL_OUTPUT=console/' /etc/default/grub
-        sed -i 's/^GRUB_CMDLINE_LINUX=.*/GRUB_CMDLINE_LINUX=""/' /etc/default/grub
-    fi
 else
     pacman -S --noconfirm grub
     grub-install --target=i386-pc /dev/${DISK}
-    
-    # Настройка GRUB для тихой загрузки - ДОБАВЛЕНО
-    if [ "$BOOT_STYLE" != "verbose" ]; then
-        sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT="quiet splash loglevel=3 vt.global_cursor_default=0"/' /etc/default/grub
-        sed -i 's/^#GRUB_TERMINAL_OUTPUT=console/GRUB_TERMINAL_OUTPUT=console/' /etc/default/grub
-    fi
 fi
 
+# Настройка параметров GRUB в зависимости от выбора
+if [ "$BOOT_STYLE" = "quiet" ]; then
+    # Безопасная тихая загрузка без Plymouth
+    sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT="quiet splash"/' /etc/default/grub
+else
+    # Стандартная загрузка с сообщениями
+    sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT=""/' /etc/default/grub
+fi
+
+# Обновляем конфиг GRUB
 grub-mkconfig -o /boot/grub/grub.cfg
-
-# Установка Plymouth для анимированной заставки - ДОБАВЛЕНО
-if [ "$BOOT_STYLE" != "verbose" ]; then
-    echo "Установка Plymouth для заставки..."
-    pacman -S --noconfirm plymouth
-    
-    # Настройка хуков для initramfs
-    sed -i 's/^HOOKS=.*/HOOKS=(base udev plymouth autodetect modconf kms keyboard keymap consolefont block filesystems fsck)/' /etc/mkinitcpio.conf
-    
-    # Пересборка initramfs
-    mkinitcpio -P
-fi
 
 # Установка графической оболочки и дополнительных пакетов
 if [ -n "$DE_PACKAGES" ]; then
     echo "Установка $DESKTOP_NAME..."
     pacman -S --noconfirm xorg-server xorg-xinit $DE_PACKAGES
+    
+    # Добавляем русскую локализацию для KDE
+    if echo "$DE_PACKAGES" | grep -q "plasma"; then
+        pacman -S --noconfirm plasma-meta-l10n-ru
+    fi
 fi
 
 if [ -n "$ADDITIONAL_PACKAGES" ]; then
@@ -398,18 +326,15 @@ cat > /home/$USERNAME/README.txt << WELCOME_EOF
 - Дисплей менеджер: $DM_PACKAGE
 - Пользователь: $USERNAME
 
-Настройки загрузки:
-- Тихая загрузка: $( [ "$BOOT_STYLE" != "verbose" ] && echo "Да" || echo "Нет" )
-- Анимированная заставка: $( [ "$BOOT_STYLE" = "arch_logo" ] && echo "Arch Linux" || echo "Производитель" )
+Если система зависает при загрузке:
+1. При загрузке нажмите Esc чтобы увидеть сообщения
+2. Или выберете в GRUB вариант с recovery mode
+3. В консоли выполните: systemctl disable plymouth (если установлен)
 
-Для запуска графической среды:
-- При наличии дисплей менеджера: система загрузится автоматически
-- Без дисплей менеджера: выполните 'startx' из консоли
+Для отключения тихой загрузки:
+Отредактируйте /etc/default/grub и уберите параметр "quiet splash"
+Затем выполните: grub-mkconfig -o /boot/grub/grub.cfg
 
-Советы:
-- Обновите систему: sudo pacman -Syu
-- Ищите пакеты: pacman -Ss <имя>
-- Для дополнительных тем Plymouth установите: yay -S plymouth-theme-arch-logo
 WELCOME_EOF
 
 chown $USERNAME:$USERNAME /home/$USERNAME/README.txt
@@ -445,7 +370,7 @@ cleanup() {
 
 # Основной процесс установки
 main() {
-    echo "=== Установка Arch Linux с тихой загрузкой ==="
+    echo "=== Установка Arch Linux ==="
     
     # Проверка интернета
     if ! ping -c 1 archlinux.org &> /dev/null; then
@@ -461,7 +386,7 @@ main() {
     select_additional_packages
     select_disk
     
-    read -p "Продолжить установку на $DISK_PATH с $DESKTOP_NAME и стилем загрузки $BOOT_STYLE? (y/N): " CONFIRM
+    read -p "Продолжить установку на $DISK_PATH с $DESKTOP_NAME? (y/N): " CONFIRM
     if [ "$CONFIRM" != "y" ] && [ "$CONFIRM" != "Y" ]; then
         echo "Установка отменена."
         exit 0
