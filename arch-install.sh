@@ -1,429 +1,510 @@
 #!/bin/bash
 
-# Скрипт автоматической установки Arch Linux с настройками пользователя
-# ВНИМАНИЕ: Этот скрипт полностью уничтожит данные на выбранном диске!
-
-set -e
-
-# Цвета для вывода
+# Цвета для оформления
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+PURPLE='\033[0;35m'
 CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
-# Переменные по умолчанию
-HOSTNAME="archlinux"
-USERNAME="archuser"
-TIMEZONE="Europe/Moscow"
-LANGUAGE="en_US.UTF-8"
-ADDITIONAL_PACKAGES=""
-
-# Функции для вывода
-print_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
-print_success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
-print_warning() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
-print_error() { echo -e "${RED}[ERROR]${NC} $1"; }
-print_input() { echo -e "${CYAN}[INPUT]${NC} $1"; }
-
-# Запрос данных у пользователя
-get_user_input() {
-    print_input "=== НАСТРОЙКА УСТАНОВКИ ==="
+# Функция для отрисовки прогресс-бара
+progress_bar() {
+    local duration=${1}
+    local columns=$(tput cols)
+    local space=$(( columns - 10 ))
+    already_done() { for ((done=0; done<$1; done++)); do printf "▇"; done }
+    remaining() { for ((remain=$1; remain<$space; remain++)); do printf " "; done }
+    percentage() { printf "| %s%%" $(( (($1)*100)/($space)*100/100 )); }
+    sleep_and_done() { 
+        sleep ${duration}
+        already_done $space
+        remaining $space
+        percentage $space
+        printf "\n";
+    }
     
-    # Имя компьютера
-    read -p "Введите имя компьютера [по умолчанию: $HOSTNAME]: " input_hostname
-    HOSTNAME=${input_hostname:-$HOSTNAME}
-    
-    # Имя пользователя
-    read -p "Введите имя пользователя [по умолчанию: $USERNAME]: " input_username
-    USERNAME=${input_username:-$USERNAME}
-    
-    # Пароль root
-    while true; do
-        read -sp "Введите пароль root: " root_password
-        echo
-        if [ -n "$root_password" ]; then
-            read -sp "Повторите пароль root: " root_password_confirm
-            echo
-            if [ "$root_password" = "$root_password_confirm" ]; then
-                break
-            else
-                print_error "Пароли не совпадают!"
-            fi
-        else
-            print_error "Пароль не может быть пустым!"
-        fi
+    sleep_and_done &
+    while kill -0 $! 2>/dev/null; do
+        already_done $(( (($space)*$SECONDS)/$duration ))
+        remaining $(( (($space)*$SECONDS)/$duration ))
+        percentage $(( (($space)*$SECONDS)/$duration ))
+        sleep 0.1
+        printf "\r"
     done
-    
-    # Пароль пользователя
-    while true; do
-        read -sp "Введите пароль для пользователя $USERNAME: " user_password
-        echo
-        if [ -n "$user_password" ]; then
-            read -sp "Повторите пароль для пользователя $USERNAME: " user_password_confirm
-            echo
-            if [ "$user_password" = "$user_password_confirm" ]; then
-                break
-            else
-                print_error "Пароли не совпадают!"
-            fi
-        else
-            print_error "Пароль не может быть пустым!"
-        fi
-    done
-    
-    # Часовой пояс
-    read -p "Введите часовой пояс [по умолчанию: $TIMEZONE]: " input_timezone
-    TIMEZONE=${input_timezone:-$TIMEZONE}
-    
-    # Выбор загрузчика
-    print_input "Выберите загрузчик:"
-    echo "1) systemd-boot (рекомендуется для UEFI)"
-    echo "2) GRUB (универсальный)"
-    read -p "Введите номер [1-2]: " bootloader_choice
-    case $bootloader_choice in
-        1) BOOTLOADER="systemd-boot" ;;
-        2) BOOTLOADER="grub" ;;
-        *) BOOTLOADER="systemd-boot" ;;
-    esac
-    
-    # Выбор графической оболочки
-    print_input "Выберите графическую оболочку:"
-    echo "1) GNOME"
-    echo "2) KDE Plasma"
-    echo "3) XFCE"
-    echo "4) LXQt"
-    echo "5) Cinnamon"
-    echo "6) Только консоль (без графики)"
-    read -p "Введите номер [1-6]: " de_choice
-    case $de_choice in
-        1) DE="gnome" ;;
-        2) DE="kde" ;;
-        3) DE="xfce" ;;
-        4) DE="lxqt" ;;
-        5) DE="cinnamon" ;;
-        6) DE="none" ;;
-        *) DE="none" ;;
-    esac
-    
-    # Дополнительные пакеты
-    print_input "Введите дополнительные пакеты для установки (через пробел):"
-    print_info "Например: firefox vim git curl wget"
-    read -p "Дополнительные пакеты: " ADDITIONAL_PACKAGES
-    
-    # Подтверждение
-    echo
-    print_warning "=== ПОДТВЕРЖДЕНИЕ НАСТРОЕК ==="
-    echo "Имя компьютера: $HOSTNAME"
-    echo "Имя пользователя: $USERNAME"
-    echo "Часовой пояс: $TIMEZONE"
-    echo "Загрузчик: $BOOTLOADER"
-    echo "Графическая оболочка: $DE"
-    echo "Дополнительные пакеты: $ADDITIONAL_PACKAGES"
-    echo
-    read -p "Продолжить установку? (y/N): " final_confirm
-    
-    if [[ $final_confirm != "y" && $final_confirm != "Y" ]]; then
-        print_info "Установка отменена"
-        exit 0
-    fi
+    printf "\n"
 }
 
-# Функция для выбора графической оболочки
-get_de_packages() {
-    case $DE in
-        "gnome")
-            DE_PACKAGES="gnome gnome-extra gdm"
-            DM_SERVICE="gdm"
-            ;;
-        "kde")
-            DE_PACKAGES="plasma plasma-meta plasma-wayland-session sddm"
-            DM_SERVICE="sddm"
-            ;;
-        "xfce")
-            DE_PACKAGES="xfce4 xfce4-goodies lightdm lightdm-gtk-greeter"
-            DM_SERVICE="lightdm"
-            ;;
-        "lxqt")
-            DE_PACKAGES="lxqt sddm"
-            DM_SERVICE="sddm"
-            ;;
-        "cinnamon")
-            DE_PACKAGES="cinnamon lightdm lightdm-gtk-greeter"
-            DM_SERVICE="lightdm"
-            ;;
-        "none")
-            DE_PACKAGES=""
-            DM_SERVICE=""
-            ;;
-    esac
+# Красивый вывод заголовков
+print_header() {
+    echo -e "${PURPLE}"
+    echo "=========================================="
+    echo "    $1"
+    echo "=========================================="
+    echo -e "${NC}"
+}
+
+# Красивый вывод информации
+print_info() {
+    echo -e "${CYAN}[INFO]${NC} $1"
+}
+
+# Красивый вывод успеха
+print_success() {
+    echo -e "${GREEN}[SUCCESS]${NC} $1"
+}
+
+# Красивое предупреждение
+print_warning() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+}
+
+# Красивое сообщение об ошибке
+print_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
+
+# Установка русского шрифта для консоли
+set_russian_font() {
+    print_info "Установка русского шрифта для консоли..."
+    setfont cyr-sun16
+    print_success "Шрифт установлен"
 }
 
 # Проверка на UEFI
 check_uefi() {
-    if [[ ! -d /sys/firmware/efi/efivars ]]; then
-        print_error "Система не загружена в UEFI режиме!"
-        if [[ $BOOTLOADER == "systemd-boot" ]]; then
-            print_warning "systemd-boot требует UEFI. Переключаю на GRUB."
-            BOOTLOADER="grub"
-        fi
+    print_info "Проверка типа firmware..."
+    if [ -d /sys/firmware/efi ]; then
+        UEFI=true
+        print_success "Обнаружена UEFI система"
     else
-        print_success "UEFI режим обнаружен"
+        UEFI=false
+        print_success "Обнаружена BIOS система"
     fi
 }
 
-# Выбор диска
+# Функция для выбора графической оболочки
+select_desktop() {
+    echo -e "${BLUE}"
+    echo "Выберите графическую оболочку:"
+    echo -e "${GREEN}1) GNOME${NC}"
+    echo -e "${GREEN}2) KDE Plasma${NC}"
+    echo -e "${GREEN}3) XFCE${NC}"
+    echo -e "${GREEN}4) LXDE${NC}"
+    echo -e "${GREEN}5) Cinnamon${NC}"
+    echo -e "${GREEN}6) Только базовая система (без DE)${NC}"
+    echo -ne "${YELLOW}Ваш выбор [1-6]: ${NC}"
+    read -r de_choice
+    
+    case $de_choice in
+        1) DESKTOP_ENV="gnome";;
+        2) DESKTOP_ENV="plasma";;
+        3) DESKTOP_ENV="xfce";;
+        4) DESKTOP_ENV="lxde";;
+        5) DESKTOP_ENV="cinnamon";;
+        6) DESKTOP_ENV="none";;
+        *) 
+            print_warning "Неверный выбор, используется GNOME"
+            DESKTOP_ENV="gnome"
+            ;;
+    esac
+    
+    print_success "Выбрано: $DESKTOP_ENV"
+}
+
+# Функция для выбора типа загрузки
+select_boot_type() {
+    echo -e "${BLUE}"
+    echo "Выберите тип загрузки:"
+    echo -e "${GREEN}1) Обычная загрузка${NC}"
+    echo -e "${GREEN}2) Тихая загрузка (без сообщений)${NC}"
+    echo -ne "${YELLOW}Ваш выбор [1-2]: ${NC}"
+    read -r boot_choice
+    
+    case $boot_choice in
+        1) QUIET_BOOT=false;;
+        2) QUIET_BOOT=true;;
+        *) 
+            print_warning "Неверный выбор, используется обычная загрузка"
+            QUIET_BOOT=false
+            ;;
+    esac
+}
+
+# Функция для выбора дополнительных пакетов
+select_additional_packages() {
+    echo -e "${BLUE}"
+    echo "Выберите дополнительные пакеты (можно выбрать несколько через запятую):"
+    echo -e "${GREEN}1) Офисные приложения (libreoffice)${NC}"
+    echo -e "${GREEN}2) Мультимедиа (vlc, gstreamer)${NC}"
+    echo -e "${GREEN}3) Графика (gimp, inkscape)${NC}"
+    echo -e "${GREEN}4) Браузеры (firefox, chromium)${NC}"
+    echo -e "${GREEN}5) Разработка (code, git, python)${NC}"
+    echo -e "${GREEN}6) Игры (steam)${NC}"
+    echo -e "${GREEN}7) Проприетарные драйверы NVIDIA${NC}"
+    echo -e "${GREEN}8) Все вышеперечисленное${NC}"
+    echo -e "${GREEN}9) Пропустить${NC}"
+    echo -ne "${YELLOW}Ваш выбор: ${NC}"
+    read -r packages_choice
+    
+    ADDITIONAL_PACKAGES=""
+    IFS=',' read -ra choices <<< "$packages_choice"
+    
+    for choice in "${choices[@]}"; do
+        case $choice in
+            1) ADDITIONAL_PACKAGES+=" libreoffice libreoffice-fresh-ru ";;
+            2) ADDITIONAL_PACKAGES+=" vlc gstreamer ";;
+            3) ADDITIONAL_PACKAGES+=" gimp inkscape ";;
+            4) ADDITIONAL_PACKAGES+=" firefox chromium ";;
+            5) ADDITIONAL_PACKAGES+=" code git python konsole ";;
+            6) ADDITIONAL_PACKAGES+=" steam ";;
+            7) ADDITIONAL_PACKAGES+=" nvidia nvidia-utils ";;
+            8) ADDITIONAL_PACKAGES+=" libreoffice libreoffice-fresh-ru vlc gstreamer gimp inkscape firefox chromium code git python steam nvidia nvidia-utils ";;
+            9) ;;
+            *) print_warning "Неверный выбор: $choice";;
+        esac
+    done
+}
+
+# Функция для выбора диска
 select_disk() {
     print_info "Доступные диски:"
-    lsblk -d -o NAME,SIZE,MODEL
-    echo
-    read -p "Введите имя диска для установки (например: sda, nvme0n1): " DISK
+    lsblk
+    echo -ne "${YELLOW}Введите имя диска для установки (например, sda, nvme0n1): ${NC}"
+    read -r DISK
     DISK_PATH="/dev/$DISK"
+    print_success "Выбран диск: $DISK_PATH"
+}
+
+# Функция для разметки диска
+partition_disk() {
+    print_info "Разметка диска $DISK_PATH..."
     
-    if [[ ! -b $DISK_PATH ]]; then
-        print_error "Диск $DISK_PATH не найден!"
+    if [ "$UEFI" = true ]; then
+        # UEFI разметка
+        parted -s "$DISK_PATH" mklabel gpt
+        parted -s "$DISK_PATH" mkpart primary fat32 1MiB 513MiB
+        parted -s "$DISK_PATH" set 1 esp on
+        parted -s "$DISK_PATH" mkpart primary ext4 513MiB 100%
+    else
+        # BIOS разметка
+        parted -s "$DISK_PATH" mklabel msdos
+        parted -s "$DISK_PATH" mkpart primary ext4 1MiB 100%
+        parted -s "$DISK_PATH" set 1 boot on
+    fi
+    
+    partprobe "$DISK_PATH"
+    print_success "Разметка завершена"
+}
+
+# Функция для форматирования разделов
+format_partitions() {
+    print_info "Форматирование разделов..."
+    
+    if [ "$UEFI" = true ]; then
+        mkfs.fat -F32 "${DISK_PATH}1"
+        mkfs.ext4 "${DISK_PATH}2"
+    else
+        mkfs.ext4 "${DISK_PATH}1"
+    fi
+    
+    print_success "Форматирование завершено"
+}
+
+# Функция для монтирования разделов
+mount_partitions() {
+    print_info "Монтирование разделов..."
+    
+    mount "${DISK_PATH}2" /mnt
+    
+    if [ "$UEFI" = true ]; then
+        mkdir -p /mnt/boot/efi
+        mount "${DISK_PATH}1" /mnt/boot/efi
+    fi
+    
+    print_success "Монтирование завершено"
+}
+
+# Функция для установки базовой системы
+install_base_system() {
+    print_info "Установка базовой системы..."
+    if pacstrap /mnt base base-devel linux linux-firmware; then
+        print_success "Базовая система установлена"
+    else
+        print_error "Ошибка установки базовой системы"
         exit 1
     fi
 }
 
-# Разметка диска
-partition_disk() {
-    print_info "Разметка диска $DISK_PATH..."
-    
-    # Очистка таблицы разделов
-    sgdisk -Z $DISK_PATH
-    
-    # Создание разделов
-    # EFI раздел (500M)
-    sgdisk -n 1:0:+500M -t 1:ef00 $DISK_PATH
-    # Root раздел (оставшееся место)
-    sgdisk -n 2:0:0 -t 2:8300 $DISK_PATH
-    
-    # Swap раздел (опционально)
-    read -p "Создать swap раздел? (y/N): " create_swap
-    if [[ $create_swap == "y" || $create_swap == "Y" ]]; then
-        sgdisk -n 3:0:+4G -t 3:8200 $DISK_PATH
-        HAS_SWAP=true
-    fi
-    
-    # Обновление информации о разделах
-    partprobe $DISK_PATH
-    sleep 2
-}
-
-# Форматирование разделов
-format_partitions() {
-    print_info "Форматирование разделов..."
-    
-    # EFI раздел
-    EFI_PART="${DISK_PATH}1"
-    mkfs.fat -F32 $EFI_PART
-    
-    # Root раздел
-    ROOT_PART="${DISK_PATH}2"
-    mkfs.ext4 $ROOT_PART
-    
-    # Swap раздел
-    if [[ $HAS_SWAP == true ]]; then
-        SWAP_PART="${DISK_PATH}3"
-        mkswap $SWAP_PART
-        swapon $SWAP_PART
-    fi
-    
-    print_success "Разделы отформатированы"
-}
-
-# Монтирование разделов
-mount_partitions() {
-    print_info "Монтирование разделов..."
-    
-    mount $ROOT_PART /mnt
-    mkdir -p /mnt/boot
-    mount $EFI_PART /mnt/boot
-    
-    print_success "Разделы смонтированы"
-}
-
-# Установка базовой системы
-install_base() {
-    print_info "Установка базовой системы..."
-    
-    local base_packages="base base-devel linux linux-firmware linux-headers efibootmgr sudo networkmanager nano git"
-    
-    if [[ $BOOTLOADER == "grub" ]]; then
-        base_packages="$base_packages grub efibootmgr"
-    fi
-    
-    pacstrap /mnt $base_packages
-    
-    print_success "Базовая система установлена"
-}
-
-# Генерация fstab
-generate_fstab() {
-    genfstab -U /mnt >> /mnt/fstab
-    print_success "fstab сгенерирован"
-}
-
-# Настройка systemd-boot
-setup_systemd_boot() {
-    arch-chroot /mnt /bin/bash <<EOF
-bootctl install
-
-# Конфигурация загрузчика
-cat > /boot/loader/loader.conf << LOADER_EOF
-default arch.conf
-timeout 3
-console-mode keep
-editor no
-LOADER_EOF
-
-# Получение PARTUUID root раздела
-ROOT_PARTUUID=\$(blkid -s PARTUUID -o value $ROOT_PART)
-
-# Создание записи загрузки
-cat > /boot/loader/entries/arch.conf << ENTRY_EOF
-title Arch Linux
-linux /vmlinuz-linux
-initrd /initramfs-linux.img
-options root=PARTUUID=\$ROOT_PARTUUID rw quiet
-ENTRY_EOF
-
-# Резервная запись
-cat > /boot/loader/entries/arch-fallback.conf << FALLBACK_EOF
-title Arch Linux (fallback)
-linux /vmlinuz-linux
-initrd /initramfs-linux-fallback.img
-options root=PARTUUID=\$ROOT_PARTUUID rw
-FALLBACK_EOF
-EOF
-}
-
-# Настройка GRUB
-setup_grub() {
-    arch-chroot /mnt /bin/bash <<EOF
-grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=GRUB
-grub-mkconfig -o /boot/grub/grub.cfg
-EOF
-}
-
-# Настройка системы в chroot
+# Функция для настройки системы
 configure_system() {
-    print_info "Настройка системы..."
+    # Генерация fstab
+    print_info "Генерация fstab..."
+    genfstab -U /mnt >> /mnt/etc/fstab
     
-    arch-chroot /mnt /bin/bash <<EOF
-set -e
+    # Создаем скрипт для настройки внутри chroot
+    cat > /mnt/root/chroot_setup.sh << 'EOF'
+#!/bin/bash
+
+# Цвета для оформления
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+PURPLE='\033[0;35m'
+CYAN='\033[0;36m'
+NC='\033[0m' # No Color
+
+# Функции для красивого вывода
+print_info() { echo -e "${CYAN}[INFO]${NC} $1"; }
+print_success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
+print_warning() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
+print_error() { echo -e "${RED}[ERROR]${NC} $1"; }
+
+# Установка русского шрифта в устанавливаемой системе
+print_info "Установка русского шрифта..."
+pacman -S --noconfirm terminus-font
 
 # Настройка времени
-ln -sf /usr/share/zoneinfo/$TIMEZONE /etc/localtime
+print_info "Настройка времени..."
+ln -sf /usr/share/zoneinfo/Europe/Moscow /etc/localtime
 hwclock --systohc
 
 # Локализация
+print_info "Настройка локализации..."
 echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen
 echo "ru_RU.UTF-8 UTF-8" >> /etc/locale.gen
 locale-gen
-echo "LANG=$LANGUAGE" > /etc/locale.conf
 
-# Настройка хоста
-echo "$HOSTNAME" > /etc/hostname
+# Устанавливаем русскую локаль по умолчанию
+print_info "Установка русской локали..."
+echo "LANG=ru_RU.UTF-8" > /etc/locale.conf
+echo "LC_TIME=ru_RU.UTF-8" >> /etc/locale.conf
+
+# Настройка клавиатуры
+print_info "Настройка клавиатуры..."
+echo "KEYMAP=ru" > /etc/vconsole.conf
+echo "FONT=cyr-sun16" >> /etc/vconsole.conf
+
+# Настройка сети
+print_info "Настройка сети..."
+read -p "Введите имя компьютера: " hostname
+echo "$hostname" > /etc/hostname
 
 cat > /etc/hosts << HOSTS_EOF
 127.0.0.1   localhost
 ::1         localhost
-127.0.1.1   $HOSTNAME.localdomain $HOSTNAME
+127.0.1.1   $hostname.localdomain   $hostname
 HOSTS_EOF
 
-# Пароль root
-echo "root:$root_password" | chpasswd
-
-# Создание пользователя
-useradd -m -G wheel -s /bin/bash $USERNAME
-echo "$USERNAME:$user_password" | chpasswd
-
-# Настройка sudo
-echo "%wheel ALL=(ALL) ALL" >> /etc/sudoers
-
 # Установка загрузчика
-if [[ "$BOOTLOADER" == "systemd-boot" ]]; then
-    setup_systemd_boot
+print_info "Установка загрузчика..."
+if [ "$UEFI" = true ]; then
+    pacman -S --noconfirm grub efibootmgr
+    grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=GRUB
 else
-    setup_grub
+    pacman -S --noconfirm grub
+    grub-install --target=i386-pc $DISK_PATH
 fi
 
-# Установка графической оболочки
-if [[ "$DE" != "none" ]]; then
-    pacman -S --noconfirm xorg xorg-server $DE_PACKAGES
-    systemctl enable $DM_SERVICE
+# КРИТИЧЕСКИ ВАЖНО: Настройка GRUB для правильного отображения меню
+print_info "Настройка GRUB..."
+# Резервное копирование оригинального файла
+cp /etc/default/grub /etc/default/grub.backup
+
+# Базовые настройки GRUB
+cat > /etc/default/grub << GRUB_EOF
+GRUB_DEFAULT=0
+GRUB_TIMEOUT=5
+GRUB_DISTRIBUTOR="Arch"
+GRUB_CMDLINE_LINUX_DEFAULT="loglevel=3"
+GRUB_CMDLINE_LINUX=""
+GRUB_PRELOAD_MODULES="part_gpt part_msdos"
+GRUB_TERMINAL_INPUT=console
+GRUB_GFXMODE=auto
+GRUB_GFXPAYLOAD_LINUX=keep
+GRUB_DISABLE_RECOVERY=true
+GRUB_EOF
+
+# Добавляем параметры для тихой загрузки если выбрано
+if [ "$QUIET_BOOT" = true ]; then
+    sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT="loglevel=3"/GRUB_CMDLINE_LINUX_DEFAULT="quiet splash loglevel=3"/' /etc/default/grub
 fi
 
-# Установка дополнительных пакетов
-if [[ -n "$ADDITIONAL_PACKAGES" ]]; then
+# Обновляем конфиг GRUB
+grub-mkconfig -o /boot/grub/grub.cfg
+
+# Проверяем что меню GRUB создано
+if [ -f /boot/grub/grub.cfg ]; then
+    print_success "GRUB настроен успешно"
+else
+    print_error "Ошибка настройки GRUB!"
+    exit 1
+fi
+
+# Установка графической оболочки и дополнительных пакетов
+print_info "Установка графической оболочки..."
+case "$DESKTOP_ENV" in
+    "gnome")
+        pacman -S --noconfirm gnome gnome-extra gdm
+        systemctl enable gdm
+        ;;
+    "plasma")
+        pacman -S --noconfirm plasma-meta plasma-wayland-session sddm
+        systemctl enable sddm
+        ;;
+    "xfce")
+        pacman -S --noconfirm xfce4 xfce4-goodies lightdm lightdm-gtk-greeter
+        systemctl enable lightdm
+        ;;
+    "lxde")
+        pacman -S --noconfirm lxde lightdm lightdm-gtk-greeter
+        systemctl enable lightdm
+        ;;
+    "cinnamon")
+        pacman -S --noconfirm cinnamon lightdm lightdm-gtk-greeter
+        systemctl enable lightdm
+        ;;
+    "none")
+        print_info "Графическая оболочка не установлена"
+        ;;
+esac
+
+# Дополнительные пакеты
+if [ -n "$ADDITIONAL_PACKAGES" ]; then
+    print_info "Установка дополнительных пакетов..."
     pacman -S --noconfirm $ADDITIONAL_PACKAGES
 fi
 
-# Генерация initramfs
-mkinitcpio -P
-
-# Включение NetworkManager
+# Включение служб
+print_info "Настройка служб..."
 systemctl enable NetworkManager
 
-print_success "Система настроена"
+# Настройка пользователя
+print_info "Настройка пользователя..."
+read -p "Введите имя пользователя: " username
+useradd -m -G wheel -s /bin/bash $username
+echo "Установите пароль для пользователя $username:"
+passwd $username
+
+# Настройка sudo
+print_info "Настройка sudo..."
+echo "%wheel ALL=(ALL:ALL) ALL" >> /etc/sudoers
+
+# Установка пароля root
+print_info "Установка пароля root..."
+echo "Установите пароль root:"
+passwd
+
+# Создание файла xinitrc для пользователя
+if [ "$DESKTOP_ENV" != "none" ]; then
+    print_info "Создание xinitrc..."
+    case "$DESKTOP_ENV" in
+        "gnome") START_CMD="exec gnome-session";;
+        "plasma") START_CMD="exec startplasma-x11";;
+        "xfce") START_CMD="exec startxfce4";;
+        "lxde") START_CMD="exec startlxde";;
+        "cinnamon") START_CMD="exec cinnamon-session";;
+    esac
+    
+    cat > /home/$username/.xinitrc << XINIT_EOF
+#!/bin/bash
+$START_CMD
+XINIT_EOF
+    chown $username:$username /home/$username/.xinitrc
+    chmod +x /home/$username/.xinitrc
+fi
+
+# Создание приветственного файла с инструкциями по GRUB
+cat > /home/$username/README_GRUB.txt << README_EOF
+Инструкция по настройке GRUB:
+
+Если у вас возникли проблемы с отображением меню GRUB:
+
+1. Проверьте настройки в /etc/default/grub
+2. Обновите конфигурацию GRUB:
+   sudo grub-mkconfig -o /boot/grub/grub.cfg
+3. Для UEFI систем проверьте наличие файлов в /boot/efi
+
+Тихая загрузка: $QUIET_BOOT
+Графическая оболочка: $DESKTOP_ENV
+README_EOF
+
+chown $username:$username /home/$username/README_GRUB.txt
+
+print_success "Настройка системы завершена!"
 EOF
+
+    # Делаем скрипт исполняемым и запускаем в chroot
+    chmod +x /mnt/root/chroot_setup.sh
+    print_info "Запуск настройки внутри chroot..."
+    arch-chroot /mnt /bin/bash -c "UEFI=$UEFI DISK_PATH=$DISK_PATH QUIET_BOOT=$QUIET_BOOT DESKTOP_ENV=$DESKTOP_ENV ADDITIONAL_PACKAGES=\"$ADDITIONAL_PACKAGES\" /root/chroot_setup.sh"
+    
+    # Удаляем временный скрипт
+    rm /mnt/root/chroot_setup.sh
+}
+
+# Обновление ключей
+update_keys() {
+    print_info "Обновление ключей..."
+    pacman -Sy --noconfirm archlinux-keyring
+    pacman-key --init
+    pacman-key --populate archlinux
+    print_success "Ключи обновлены"
 }
 
 # Основная функция
 main() {
-    print_warning "ВНИМАНИЕ: Этот скрипт уничтожит все данные на выбранном диске!"
-    read -p "Продолжить? (y/N): " confirm
+    clear
+    print_header "Arch Linux Installer"
+    print_info "Начинается установка Arch Linux..."
     
-    if [[ $confirm != "y" && $confirm != "Y" ]]; then
-        print_info "Установка отменена"
+    # Проверка интернета
+    if ! ping -c 1 archlinux.org &> /dev/null; then
+        print_error "Нет подключения к интернету!"
+        exit 1
+    fi
+    
+    # Запрос переменных у пользователя
+    set_russian_font
+    check_uefi
+    select_desktop
+    select_boot_type
+    select_additional_packages
+    select_disk
+    
+    # Подтверждение
+    echo -e "${YELLOW}"
+    echo "=== ПОДТВЕРЖДЕНИЕ УСТАНОВКИ ==="
+    echo "Диск: $DISK_PATH"
+    echo "UEFI: $UEFI"
+    echo "Графическая оболочка: $DESKTOP_ENV"
+    echo "Тихая загрузка: $QUIET_BOOT"
+    echo "Дополнительные пакеты: $ADDITIONAL_PACKAGES"
+    echo -e "${NC}"
+    
+    read -rp "Продолжить установку? (y/N): " confirm
+    if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
+        print_error "Установка отменена."
         exit 0
     fi
     
-    # Получение данных от пользователя
-    get_user_input
-    get_de_packages
-    
-    # Проверки
-    check_uefi
-    
-    # Выбор и подготовка диска
-    select_disk
+    # Процесс установки
+    print_header "НАЧАЛО УСТАНОВКИ"
+    update_keys
     partition_disk
     format_partitions
     mount_partitions
-    
-    # Установка системы
-    install_base
-    generate_fstab
+    install_base_system
     configure_system
     
     # Завершение
-    print_info "Завершение установки..."
     umount -R /mnt
-    
-    print_success "Установка завершена!"
-    echo
-    print_info "=== ДАННЫЕ ДЛЯ ВХОДА ==="
-    print_info "Имя компьютера: $HOSTNAME"
-    print_info "Пользователь: $USERNAME"
-    print_info "Пароль пользователя: (установленный вами)"
-    print_info "Пароль root: (установленный вами)"
-    echo
-    print_info "Выполните: reboot"
-    print_info "После перезагрузки войдите как: $USERNAME"
-    
-    if [[ $DE != "none" ]]; then
-        print_info "Графический интерфейс: $DE"
-    fi
+    print_header "УСТАНОВКА ЗАВЕРШЕНА"
+    print_success "Установка завершена успешно! Перезагрузите систему."
+    echo -e "${YELLOW}Не забудьте извлечить установочный носитель!${NC}"
 }
 
-# Запуск скрипта
-if [[ $EUID -eq 0 ]]; then
-    main
-else
-    print_error "Этот скрипт должен запускаться от root!"
-    exit 1
-fi
+# Запуск основной функции
+main "$@"
