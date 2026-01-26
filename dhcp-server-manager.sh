@@ -47,6 +47,7 @@ show_menu() {
     echo -e "${BLUE}║${NC} 20. Управление UFW (брандмауэр)                                   ${BLUE}║${NC}"
     echo -e "${BLUE}║${NC} 21. Управление iptables (правила фаервола)                        ${BLUE}║${NC}"
     echo -e "${BLUE}║${NC} 22. Управление маршрутизацией (добавить/удалить маршруты)         ${BLUE}║${NC}"
+    echo -e "${BLUE}║${NC} 23. Управление переименованием сетевых интерфейсов                ${BLUE}║${NC}"
     echo -e "${BLUE}║${NC} 23. Выход                                                         ${BLUE}║${NC}"
     echo -e "${BLUE}╚═══════════════════════════════════════════════════════════════════════════════╝${NC}"
     echo -n "Выберите опцию [1-22]: "
@@ -514,58 +515,289 @@ EOF
 # Функция 5: Проверить и исправить IP адрес
 fix_ip_address() {
     echo -e "\n${GREEN}=== ПРОВЕРКА И ИСПРАВЛЕНИЕ IP АДРЕСА ===${NC}\n"
-    
+
     read -p "Введите имя интерфейса [$DEFAULT_INTERFACE]: " interface
     interface=${interface:-$DEFAULT_INTERFACE}
-    
+
     echo -e "\n${YELLOW}Текущее состояние:${NC}"
     ip addr show $interface 2>/dev/null || echo "Интерфейс не найден"
-    
+
+    # Проверим, какие методы конфигурации доступны
+    echo -e "\n${YELLOW}Обнаруженные методы конфигурации:${NC}"
+    has_netplan=false
+    has_systemd_networkd=false
+
+    if [[ -d "/etc/netplan" ]] && ls /etc/netplan/*.yaml 2>/dev/null >/dev/null; then
+        echo "✓ Netplan доступен"
+        has_netplan=true
+    fi
+
+    if systemctl is-active systemd-networkd >/dev/null 2>&1 && [[ -d "$NETWORKD_DIR" ]]; then
+        echo "✓ systemd-networkd доступен"
+        has_systemd_networkd=true
+    fi
+
     echo -e "\n${YELLOW}Опции:${NC}"
-    echo "1. Назначить статический IP"
-    echo "2. Включить DHCP"
-    echo "3. Сбросить настройки"
-    echo "4. Проверить соединение"
-    read -p "Выберите опцию [1-4]: " ip_option
-    
+    echo "1. Назначить статический IP (временно)"
+    echo "2. Назначить статический IP (постоянно)"
+    echo "3. Включить DHCP (временно)"
+    echo "4. Включить DHCP (постоянно)"
+    echo "5. Сбросить настройки"
+    echo "6. Проверить соединение"
+    read -p "Выберите опцию [1-6]: " ip_option
+
     case $ip_option in
         1)
+            # Временный статический IP
             read -p "Введите IP адрес [192.168.10.1]: " static_ip
             static_ip=${static_ip:-"192.168.10.1"}
-            
-            echo "Назначаем статический IP $static_ip/24..."
+            read -p "Введите маску подсети [24]: " netmask
+            netmask=${netmask:-"24"}
+
+            echo "Назначаем временный статический IP $static_ip/$netmask..."
             ip addr flush dev $interface 2>/dev/null
-            ip addr add $static_ip/24 dev $interface 2>/dev/null
+            ip addr add $static_ip/$netmask dev $interface 2>/dev/null
             ip link set $interface up 2>/dev/null
-            
+
+            echo -e "\n${GREEN}Текущее состояние интерфейса:${NC}"
+            ip addr show $interface
+            echo -e "${YELLOW}Внимание: Этот IP будет сброшен после перезагрузки!${NC}"
+            ;;
+
+        2)
+            # Постоянный статический IP
+            read -p "Введите IP адрес [192.168.10.1]: " static_ip
+            static_ip=${static_ip:-"192.168.10.1"}
+            read -p "Введите маску подсети [24]: " netmask
+            netmask=${netmask:-"24"}
+
+            echo -e "\n${YELLOW}Выберите метод сохранения:${NC}"
+            if $has_netplan && $has_systemd_networkd; then
+                echo "1. Netplan (рекомендуется для Ubuntu)"
+                echo "2. systemd-networkd"
+                read -p "Выберите [1-2]: " method_choice
+            elif $has_netplan; then
+                echo "1. Netplan"
+                method_choice=1
+            elif $has_systemd_networkd; then
+                echo "2. systemd-networkd"
+                method_choice=2
+            else
+                echo "Не найдены методы конфигурации. Используем временную настройку."
+                method_choice=0
+            fi
+
+            case $method_choice in
+                1)
+                    # Netplan конфигурация
+                    echo "Настраиваем через Netplan..."
+
+                    # Создаем или обновляем конфиг netplan
+                    netplan_file="/etc/netplan/01-$interface-static.yaml"
+
+                    cat > $netplan_file << EOF
+network:
+  version: 2
+  renderer: networkd
+  ethernets:
+    $interface:
+      addresses:
+        - $static_ip/$netmask
+      dhcp4: no
+      dhcp6: no
+EOF
+
+                    echo "Применяем настройки Netplan..."
+                    netplan apply
+
+                    echo -e "${GREEN}Настройки Netplan сохранены в $netplan_file${NC}"
+                    ;;
+
+                2)
+                    # systemd-networkd конфигурация
+                    echo "Настраиваем через systemd-networkd..."
+
+                    network_file="$NETWORKD_DIR/10-$interface.network"
+
+                    cat > $network_file << EOF
+[Match]
+Name=$interface
+
+[Network]
+Address=$static_ip/$netmask
+EOF
+
+                    echo "Перезапускаем systemd-networkd..."
+                    systemctl restart systemd-networkd
+
+                    echo -e "${GREEN}Настройки systemd-networkd сохранены в $network_file${NC}"
+                    ;;
+
+                *)
+                    # Временная настройка как fallback
+                    echo "Используем временную настройку..."
+                    ip addr flush dev $interface 2>/dev/null
+                    ip addr add $static_ip/$netmask dev $interface 2>/dev/null
+                    ip link set $interface up 2>/dev/null
+                    echo -e "${YELLOW}Настройки временные - не сохранятся после перезагрузки!${NC}"
+                    ;;
+            esac
+
+            # Применяем временно для немедленного эффекта
+            ip addr flush dev $interface 2>/dev/null
+            ip addr add $static_ip/$netmask dev $interface 2>/dev/null
+            ip link set $interface up 2>/dev/null
+
+            echo -e "\n${GREEN}Текущее состояние интерфейса:${NC}"
             ip addr show $interface
             ;;
-        2)
-            echo "Включаем DHCP..."
+
+        3)
+            # Временный DHCP клиент
+            echo "Включаем DHCP временно..."
             dhclient -r $interface 2>/dev/null
             dhclient $interface 2>/dev/null &
-            
+
             sleep 3
+            echo -e "\n${GREEN}Текущее состояние интерфейса:${NC}"
+            ip addr show $interface
+            echo -e "${YELLOW}Внимание: Эти настройки будут сброшены после перезагрузки!${NC}"
+            ;;
+
+        4)
+            # Постоянный DHCP клиент
+            echo "Настраиваем постоянный DHCP клиент..."
+
+            echo -e "\n${YELLOW}Выберите метод сохранения:${NC}"
+            if $has_netplan && $has_systemd_networkd; then
+                echo "1. Netplan (рекомендуется для Ubuntu)"
+                echo "2. systemd-networkd"
+                read -p "Выберите [1-2]: " method_choice
+            elif $has_netplan; then
+                echo "1. Netplan"
+                method_choice=1
+            elif $has_systemd_networkd; then
+                echo "2. systemd-networkd"
+                method_choice=2
+            else
+                echo "Не найдены методы конфигурации."
+                return 1
+            fi
+
+            case $method_choice in
+                1)
+                    # Netplan DHCP конфигурация
+                    netplan_file="/etc/netplan/01-$interface-dhcp.yaml"
+
+                    cat > $netplan_file << EOF
+network:
+  version: 2
+  renderer: networkd
+  ethernets:
+    $interface:
+      dhcp4: yes
+      dhcp6: no
+      optional: true
+EOF
+
+                    echo "Применяем настройки Netplan..."
+                    netplan apply
+                    echo -e "${GREEN}Настройки DHCP через Netplan сохранены${NC}"
+                    ;;
+
+                2)
+                    # systemd-networkd DHCP конфигурация
+                    network_file="$NETWORKD_DIR/10-$interface.network"
+
+                    cat > $network_file << EOF
+[Match]
+Name=$interface
+
+[Network]
+DHCP=yes
+EOF
+
+                    echo "Перезапускаем systemd-networkd..."
+                    systemctl restart systemd-networkd
+                    echo -e "${GREEN}Настройки DHCP через systemd-networkd сохранены${NC}"
+                    ;;
+            esac
+
+            # Запускаем DHCP клиент для немедленного получения адреса
+            dhclient -r $interface 2>/dev/null
+            dhclient $interface 2>/dev/null &
+
+            sleep 2
+            echo -e "\n${GREEN}Текущее состояние интерфейса:${NC}"
             ip addr show $interface
             ;;
-        3)
-            echo "Сбрасываем настройки..."
+
+        5)
+            # Сброс настроек
+            echo "Сбрасываем настройки интерфейса..."
+
+            # Временный сброс
             ip addr flush dev $interface 2>/dev/null
             ip link set $interface down 2>/dev/null
             sleep 1
             ip link set $interface up 2>/dev/null
-            
+
+            # Удаляем конфигурационные файлы
+            echo "Удаляем конфигурационные файлы..."
+
+            # Netplan
+            rm -f /etc/netplan/*-$interface-*.yaml 2>/dev/null
+            rm -f /etc/netplan/*-$interface.yaml 2>/dev/null
+
+            # systemd-networkd
+            rm -f $NETWORKD_DIR/*-$interface.network 2>/dev/null
+            rm -f $NETWORKD_DIR/*-$interface.network 2>/dev/null
+
+            # Применяем изменения
+            if $has_netplan; then
+                netplan apply 2>/dev/null
+            fi
+
+            if $has_systemd_networkd; then
+                systemctl restart systemd-networkd 2>/dev/null
+            fi
+
+            echo -e "\n${GREEN}Текущее состояние интерфейса:${NC}"
             ip addr show $interface
+            echo -e "${GREEN}Все настройки интерфейса сброшены${NC}"
             ;;
-        4)
+
+        6)
+            # Проверка соединения
             echo "Проверяем соединение..."
-            ethtool $interface 2>/dev/null | grep -E "Link|Speed" || echo "ethtool не доступен"
+
+            # Проверяем физическое соединение
+            if command -v ethtool >/dev/null; then
+                echo -e "\n${YELLOW}Физическое соединение:${NC}"
+                ethtool $interface 2>/dev/null | grep -E "Link|Speed|Duplex" || echo "ethtool не доступен"
+            fi
+
+            # Проверяем IP адрес
+            echo -e "\n${YELLOW}IP адрес:${NC}"
+            ip -4 addr show $interface 2>/dev/null | grep inet || echo "IP адрес не назначен"
+
+            # Проверяем маршруты
+            echo -e "\n${YELLOW}Маршруты для интерфейса:${NC}"
+            ip route show | grep "dev $interface" || echo "Нет маршрутов через этот интерфейс"
+
+            # Проверяем доступность шлюза
+            gateway=$(ip route show default | grep "dev $interface" | awk '{print $3}')
+            if [ -n "$gateway" ]; then
+                echo -e "\n${YELLOW}Проверка шлюза ($gateway):${NC}"
+                ping -c 2 -W 1 $gateway 2>/dev/null && echo "Шлюз доступен" || echo "Шлюз недоступен"
+            fi
             ;;
+
         *)
             echo "Неверный выбор"
             ;;
     esac
-    
+
     read -p "Нажмите Enter для продолжения..."
 }
 
@@ -1873,6 +2105,316 @@ EOF
     read -p "Нажмите Enter для продолжения..."
 }
 
+# Функция 23: Управление переименованием сетевых интерфейсов
+manage_interface_renaming() {
+    echo -e "\n${GREEN}=== УПРАВЛЕНИЕ ПЕРЕИМЕНОВАНИЕМ СЕТЕВЫХ ИНТЕРФЕЙСОВ ===${NC}\n"
+
+    echo -e "${YELLOW}Текущие сетевые интерфейсы:${NC}"
+    echo "══════════════════════════════════════════"
+    ip -o link show | awk -F': ' '{print $2}' | grep -v lo
+    echo ""
+
+    echo -e "${YELLOW}Информация о сетевых картах:${NC}"
+    echo "══════════════════════════════════════════"
+    lshw -class network -short 2>/dev/null || echo "lshw не установлен. Установите: apt install lshw"
+    echo ""
+
+    echo -e "${YELLOW}Опции управления:${NC}"
+    echo "1. Показать текущие параметры GRUB"
+    echo "2. Отключить переименование интерфейсов (predictable)"
+    echo "3. Включить переименование интерфейсов (predictable)"
+    echo "4. Использовать старые имена (ethX)"
+    echo "5. Использовать имена на основе MAC адресов"
+    echo "6. Применить правила udev для статических имен"
+    echo "7. Восстановить настройки по умолчанию"
+    read -p "Выберите опцию [1-7]: " rename_option
+
+    case $rename_option in
+        1)
+            echo -e "\n${YELLOW}Текущие параметры GRUB:${NC}"
+            echo "══════════════════════════════════════════"
+            if [ -f /etc/default/grub ]; then
+                grep -i "net.ifnames\|biosdevname\|quiet" /etc/default/grub || echo "Параметры не найдены"
+            else
+                echo "Файл /etc/default/grub не найден"
+            fi
+
+            echo -e "\n${YELLOW}Текущие параметры ядра:${NC}"
+            echo "══════════════════════════════════════════"
+            cat /proc/cmdline | tr ' ' '\n' | grep -E "net.ifnames|biosdevname" || echo "Параметры не установлены"
+            ;;
+
+        2)
+            echo -e "\n${YELLOW}Отключение предсказуемых имен интерфейсов...${NC}"
+
+            # Резервная копия файла grub
+            cp /etc/default/grub /etc/default/grub.backup.$(date +%Y%m%d_%H%M%S)
+
+            # Проверяем текущие параметры GRUB_CMDLINE_LINUX
+            if grep -q "GRUB_CMDLINE_LINUX=" /etc/default/grub; then
+                # Получаем текущую строку
+                current_cmdline=$(grep "GRUB_CMDLINE_LINUX=" /etc/default/grub | cut -d'"' -f2)
+
+                # Добавляем параметры если их нет
+                if [[ ! $current_cmdline =~ net.ifnames=0 ]]; then
+                    new_cmdline="$current_cmdline net.ifnames=0"
+                else
+                    new_cmdline="$current_cmdline"
+                fi
+
+                if [[ ! $current_cmdline =~ biosdevname=0 ]]; then
+                    new_cmdline="$new_cmdline biosdevname=0"
+                fi
+
+                # Удаляем лишние пробелы
+                new_cmdline=$(echo "$new_cmdline" | sed 's/  */ /g')
+
+                # Обновляем файл grub
+                sed -i "s/GRUB_CMDLINE_LINUX=.*/GRUB_CMDLINE_LINUX=\"$new_cmdline\"/" /etc/default/grub
+
+                echo -e "${GREEN}Параметры обновлены:${NC}"
+                grep "GRUB_CMDLINE_LINUX=" /etc/default/grub
+
+                # Обновляем GRUB
+                echo -e "\n${YELLOW}Обновляем конфигурацию GRUB...${NC}"
+                if [ -d /sys/firmware/efi ]; then
+                    update-grub
+                else
+                    grub-mkconfig -o /boot/grub/grub.cfg
+                fi
+
+                echo -e "\n${GREEN}Готово!${NC}"
+                echo "Для применения изменений необходима перезагрузка."
+                echo "После перезагрузки интерфейсы будут использовать старые имена (eth0, eth1 и т.д.)"
+            else
+                echo -e "${RED}Ошибка: Не найдена строка GRUB_CMDLINE_LINUX${NC}"
+            fi
+            ;;
+
+        3)
+            echo -e "\n${YELLOW}Включение предсказуемых имен интерфейсов...${NC}"
+
+            # Резервная копия
+            cp /etc/default/grub /etc/default/grub.backup.$(date +%Y%m%d_%H%M%S)
+
+            if grep -q "GRUB_CMDLINE_LINUX=" /etc/default/grub; then
+                current_cmdline=$(grep "GRUB_CMDLINE_LINUX=" /etc/default/grub | cut -d'"' -f2)
+
+                # Удаляем параметры отключения
+                new_cmdline=$(echo "$current_cmdline" | sed 's/net.ifnames=0//g' | sed 's/biosdevname=0//g')
+                new_cmdline=$(echo "$new_cmdline" | sed 's/  */ /g' | sed 's/^ //' | sed 's/ $//')
+
+                sed -i "s/GRUB_CMDLINE_LINUX=.*/GRUB_CMDLINE_LINUX=\"$new_cmdline\"/" /etc/default/grub
+
+                echo -e "${GREEN}Параметры обновлены:${NC}"
+                grep "GRUB_CMDLINE_LINUX=" /etc/default/grub
+
+                # Обновляем GRUB
+                echo -e "\n${YELLOW}Обновляем конфигурацию GRUB...${NC}"
+                if [ -d /sys/firmware/efi ]; then
+                    update-grub
+                else
+                    grub-mkconfig -o /boot/grub/grub.cfg
+                fi
+
+                echo -e "\n${GREEN}Готово!${NC}"
+                echo "После перезагрузки будут использоваться предсказуемые имена (enpXsY)."
+            fi
+            ;;
+
+        4)
+            echo -e "\n${YELLOW}Настройка старых имен ethX...${NC}"
+
+            # Отключаем predictable и biosdevname
+            manage_interface_renaming_option "net.ifnames=0 biosdevname=0"
+
+            echo -e "\n${GREEN}Настройка завершена!${NC}"
+            echo "После перезагрузки интерфейсы будут называться eth0, eth1 и т.д."
+            ;;
+
+        5)
+            echo -e "\n${YELLOW}Настройка имен на основе MAC адресов...${NC}"
+
+            # Создаем правила udev
+            udev_dir="/etc/udev/rules.d"
+            udev_file="$udev_dir/10-network.rules"
+
+            echo "Создаем правила udev..."
+            echo "# Статические имена на основе MAC адресов" > $udev_file
+
+            # Получаем информацию о сетевых интерфейсах
+            ip -o link show | grep -v lo | while read line; do
+                iface=$(echo $line | awk -F': ' '{print $2}')
+                mac=$(echo $line | awk -F' ' '{print $17}')
+
+                if [ -n "$mac" ] && [ "$mac" != "00:00:00:00:00:00" ]; then
+                    echo "SUBSYSTEM==\"net\", ACTION==\"add\", ATTR{address}==\"$mac\", NAME=\"eth$(echo $iface | sed 's/[^0-9]*//g')\"" >> $udev_file
+                    echo "Добавлено правило для $iface ($mac)"
+                fi
+            done
+
+            echo -e "\n${GREEN}Правила udev созданы:${NC}"
+            cat $udev_file
+
+            # Отключаем systemd-networkd переименование
+            manage_interface_renaming_option "net.ifnames=0"
+
+            echo -e "\n${YELLOW}Для применения правил udev:${NC}"
+            echo "1. Перезагрузите систему"
+            echo "ИЛИ"
+            echo "2. Выполните команды:"
+            echo "   udevadm control --reload-rules"
+            echo "   udevadm trigger --type=subsystems --action=add"
+            ;;
+
+        6)
+            echo -e "\n${YELLOW}Настройка статических имен через udev...${NC}"
+
+            udev_dir="/etc/udev/rules.d"
+            udev_file="$udev_dir/70-persistent-net.rules"
+
+            echo "Создаем файл правил udev..."
+            echo "# Persistent network device naming" > $udev_file
+
+            # Счетчик для ethX
+            eth_counter=0
+
+            # Получаем информацию о физических сетевых картах
+            for dev in /sys/class/net/*; do
+                iface=$(basename $dev)
+
+                # Пропускаем виртуальные интерфейсы
+                if [[ $iface == lo* ]] || [[ $iface == docker* ]] || [[ $iface == br-* ]] || [[ $iface == veth* ]]; then
+                    continue
+                fi
+
+                # Получаем MAC адрес
+                if [ -f "$dev/address" ]; then
+                    mac=$(cat "$dev/address" | tr '[:lower:]' '[:upper:]')
+
+                    if [ "$mac" != "00:00:00:00:00:00" ]; then
+                        # Получаем информацию о PCI
+                        if [ -L "$dev/device" ]; then
+                            pci_path=$(readlink -f "$dev/device")
+                            pci_id=$(basename $pci_path)
+
+                            echo "# PCI device $pci_id" >> $udev_file
+                            echo "SUBSYSTEM==\"net\", ACTION==\"add\", DRIVERS==\"?*\", ATTR{address}==\"$mac\", ATTR{dev_id}==\"0x0\", ATTR{type}==\"1\", KERNEL==\"eth*\", NAME=\"eth${eth_counter}\"" >> $udev_file
+
+                            echo "Добавлено: $iface (MAC: $mac) -> eth${eth_counter}"
+                            eth_counter=$((eth_counter + 1))
+                        fi
+                    fi
+                fi
+            done
+
+            # Применяем правила
+            echo -e "\n${YELLOW}Применяем правила...${NC}"
+            udevadm control --reload-rules
+            udevadm trigger --type=subsystems --action=add
+
+            echo -e "\n${GREEN}Правила созданы:${NC}"
+            cat $udev_file
+
+            echo -e "\n${YELLOW}Необходима перезагрузка для применения изменений.${NC}"
+            ;;
+
+        7)
+            echo -e "\n${YELLOW}Восстановление настроек по умолчанию...${NC}"
+
+            # Восстанавливаем оригинальный GRUB
+            if [ -f /etc/default/grub.backup.* ]; then
+                latest_backup=$(ls -t /etc/default/grub.backup.* | head -1)
+                if [ -f "$latest_backup" ]; then
+                    cp "$latest_backup" /etc/default/grub
+                    echo "Восстановлен GRUB из $latest_backup"
+                fi
+            else
+                # Удаляем параметры из GRUB
+                sed -i 's/net.ifnames=0//g' /etc/default/grub
+                sed -i 's/biosdevname=0//g' /etc/default/grub
+                sed -i 's/  */ /g' /etc/default/grub
+                sed -i 's/^ //' /etc/default/grub
+                sed -i 's/ $//' /etc/default/grub
+                echo "Параметры удалены из GRUB"
+            fi
+
+            # Удаляем правила udev
+            rm -f /etc/udev/rules.d/10-network.rules
+            rm -f /etc/udev/rules.d/70-persistent-net.rules
+
+            # Обновляем GRUB
+            update-grub 2>/dev/null || grub-mkconfig -o /boot/grub/grub.cfg
+
+            # Перезагружаем udev
+            udevadm control --reload-rules
+            udevadm trigger
+
+            echo -e "\n${GREEN}Настройки восстановлены!${NC}"
+            echo "Перезагрузите систему для применения изменений."
+            ;;
+
+        *)
+            echo "Неверный выбор"
+            ;;
+    esac
+
+    echo -e "\n${YELLOW}Текущие параметры загрузки:${NC}"
+    cat /proc/cmdline | grep -o "net.ifnames[^ ]*\|biosdevname[^ ]*" || echo "Параметры не установлены"
+
+    read -p "Нажмите Enter для продолжения..."
+}
+
+# Вспомогательная функция для изменения параметров GRUB
+manage_interface_renaming_option() {
+    local params=$1
+
+    if [ ! -f /etc/default/grub ]; then
+        echo -e "${RED}Файл /etc/default/grub не найден!${NC}"
+        return 1
+    fi
+
+    # Создаем резервную копию
+    backup_file="/etc/default/grub.backup.$(date +%Y%m%d_%H%M%S)"
+    cp /etc/default/grub "$backup_file"
+
+    # Обновляем параметры GRUB_CMDLINE_LINUX
+    if grep -q "GRUB_CMDLINE_LINUX=" /etc/default/grub; then
+        current_line=$(grep "GRUB_CMDLINE_LINUX=" /etc/default/grub)
+        current_params=$(echo "$current_line" | cut -d'"' -f2)
+
+        # Удаляем старые параметры переименования
+        cleaned_params=$(echo "$current_params" | sed 's/net.ifnames=[0-9]//g' | sed 's/biosdevname=[0-9]//g')
+        cleaned_params=$(echo "$cleaned_params" | sed 's/  */ /g' | sed 's/^ //' | sed 's/ $//')
+
+        # Добавляем новые параметры
+        new_params="$cleaned_params $params"
+        new_params=$(echo "$new_params" | sed 's/  */ /g' | sed 's/^ //' | sed 's/ $//')
+
+        # Обновляем файл
+        sed -i "s|GRUB_CMDLINE_LINUX=.*|GRUB_CMDLINE_LINUX=\"$new_params\"|" /etc/default/grub
+
+        echo -e "${GREEN}Параметры обновлены:${NC}"
+        grep "GRUB_CMDLINE_LINUX=" /etc/default/grub
+
+        # Обновляем конфигурацию GRUB
+        echo -e "\n${YELLOW}Обновляем конфигурацию GRUB...${NC}"
+        if command -v update-grub >/dev/null; then
+            update-grub
+        elif command -v grub-mkconfig >/dev/null; then
+            grub-mkconfig -o /boot/grub/grub.cfg
+        else
+            echo -e "${YELLOW}Команда обновления GRUB не найдена${NC}"
+        fi
+
+        echo -e "\n${GREEN}Конфигурация обновлена!${NC}"
+        echo -e "${YELLOW}Для применения изменений необходима перезагрузка.${NC}"
+
+    else
+        echo -e "${RED}Ошибка: Не найдена строка GRUB_CMDLINE_LINUX${NC}"
+    fi
+}
+
 # Основной цикл
 main() {
     check_root
@@ -1904,7 +2446,8 @@ main() {
             20) manage_ufw ;;
             21) manage_iptables ;;
             22) manage_routing ;;
-            23)
+            23) manage_interface_renaming ;;
+            24)
                 echo "Выход"
                 exit 0
                 ;;
