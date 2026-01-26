@@ -129,12 +129,12 @@ full_diagnostic() {
     echo ""
     
     if [[ -d "$NETWORKD_DIR" ]]; then
-    echo "Конфиги systemd-networkd:"
-    ls -la "$NETWORKD_DIR/"
-    find "$NETWORKD_DIR" -maxdepth 1 -name "*.network" -type f | while read -r file; do
-        echo -e "\nФайл: $file"
-        cat "$file" 2>/dev/null || echo "Не удалось прочитать"
-    done
+        echo "Конфиги systemd-networkd:"
+        ls -la "$NETWORKD_DIR/"
+        find "$NETWORKD_DIR" -maxdepth 1 -name "*.network" -type f | while read -r file; do
+            echo -e "\nФайл: $file"
+            cat "$file" 2>/dev/null || echo "Не удалось прочитать"
+        done
     fi
     echo ""
     
@@ -166,13 +166,13 @@ full_diagnostic() {
     echo "══════════════════════════════════════════"
     if [[ -d "/run/systemd/netif/leases" ]]; then
         echo "Активные аренды systemd-networkd:"
-        ls -la /run/systemd/netif/leases/
-        for lease in /run/systemd/netif/leases/* 2>/dev/null; do
-            if [[ -f $lease ]]; then
-                echo -e "\nФайл: $(basename $lease)"
+        ls -la /run/systemd/netif/leases/ 2>/dev/null
+        for lease in /run/systemd/netif/leases/*; do
+            if [[ -f "$lease" ]]; then
+                echo -e "\nФайл: $(basename "$lease")"
                 cat "$lease"
             fi
-        done
+        done 2>/dev/null
     else
         echo "Аренды systemd-networkd не найдены"
     fi
