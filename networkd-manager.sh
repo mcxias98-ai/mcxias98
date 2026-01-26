@@ -128,21 +128,27 @@ full_diagnostic() {
     fi
     echo ""
     
-    if [[ -d "$NETWORKD_DIR" ]]; then
-        echo "Конфиги systemd-networkd:"
-        ls -la $NETWORKD_DIR/
-        for file in $NETWORKD_DIR/*.network 2>/dev/null; do
-            if [[ -f $file ]]; then
-                echo -e "\nФайл: $file"
-                cat "$file" 2>/dev/null || echo "Не удалось прочитать"
-            fi
-        done
+        echo -e "\n${YELLOW}Проверяем синтаксис конфигурации...${NC}"
+    if command -v dhcpd >/dev/null 2>&1; then
+        if dhcpd -t -cf /etc/dhcp/dhcpd.conf 2>/dev/null; then
+            echo -e "${GREEN}Синтаксис конфигурации правильный!${NC}"
+            
+            systemctl stop isc-dhcp-server 2>/dev/null
+            systemctl start isc-dhcp-server
+            systemctl enable isc-dhcp-server
+            
+            echo -e "\n${GREEN}Статус службы:${NC}"
+            systemctl status isc-dhcp-server --no-pager -l | head -10
+        else
+            echo -e "${RED}Ошибка в синтаксисе конфигурации!${NC}"
+            echo "Проверьте файл /etc/dhcp/dhcpd.conf"
+        fi
+    else
+        echo -e "${YELLOW}dhcpd не найден, пропускаем проверку синтаксиса${NC}"
+        systemctl stop isc-dhcp-server 2>/dev/null
+        systemctl start isc-dhcp-server
+        systemctl enable isc-dhcp-server
     fi
-    echo ""
-    
-    if [[ -f "/etc/dhcp/dhcpd.conf" ]]; then
-        echo "Конфиг isc-dhcp-server (/etc/dhcp/dhcpd.conf):"
-        cat /etc/dhcp/dhcpd.conf | head -20
     fi
     echo ""
     
