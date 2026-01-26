@@ -886,15 +886,15 @@ monitor_dhcp_traffic() {
     
     case $monitor_option in
         1)
-            timeout 10 tcpdump -i $interface -n "port 67 or port 68" 2>/dev/null || echo "Мониторинг не удался"
+            timeout 60 tcpdump -i $interface -n "port 67 or port 68" 2>/dev/null || echo "Мониторинг не удался"
             ;;
         2)
-            timeout 10 tcpdump -i $interface -n -X "port 67 or port 68" 2>/dev/null || echo "Мониторинг не удался"
+            timeout 60 tcpdump -i $interface -n -X "port 67 or port 68" 2>/dev/null || echo "Мониторинг не удался"
             ;;
         3)
             pcap_file="/tmp/dhcp_capture_$(date +%s).pcap"
             echo "Записываем в $pcap_file..."
-            timeout 10 tcpdump -i $interface -n -w $pcap_file "port 67 or port 68" 2>/dev/null
+            timeout 100 tcpdump -i $interface -n -w $pcap_file "port 67 or port 68" 2>/dev/null
             echo "Запись завершена"
             ;;
         *)
@@ -1556,12 +1556,48 @@ manage_iptables() {
             ;;
         5)
             echo "Сохраняем правила для автоматической загрузки..."
-            if command -v iptables-persistent &> /dev/null; then
-                netfilter-persistent save
-                echo -e "${GREEN}Правила сохранены для автоматической загрузки${NC}"
+
+            # Проверяем наличие пакета iptables-persistent
+            if dpkg -l | grep -q "iptables-persistent"; then
+                echo -e "${GREEN}Пакет iptables-persistent установлен${NC}"
+
+                # Пробуем разные методы сохранения
+                if command -v netfilter-persistent &> /dev/null; then
+                    netfilter-persistent save
+                    echo -e "${GREEN}Правила сохранены через netfilter-persistent${NC}"
+                elif command -v iptables-persistent &> /dev/null; then
+                    iptables-persistent save
+                    echo -e "${GREEN}Правила сохранены через iptables-persistent${NC}"
+                else
+                    # Альтернативный способ сохранения
+                    echo "Сохраняем правила вручную..."
+                    mkdir -p /etc/iptables
+                    iptables-save > /etc/iptables/rules.v4
+                    ip6tables-save > /etc/iptables/rules.v6
+                    echo -e "${GREEN}Правила сохранены в /etc/iptables/${NC}"
+                fi
+
+                # Показываем статус службы
+                echo -e "\n${YELLOW}Статус службы:${NC}"
+                if systemctl list-unit-files | grep -q netfilter-persistent; then
+                    systemctl status netfilter-persistent --no-pager -l
+                fi
             else
-                echo -e "${YELLOW}iptables-persistent не установлен${NC}"
-                echo "Установите: apt install iptables-persistent"
+                echo -e "${YELLOW}Пакет iptables-persistent не установлен${NC}"
+                read -p "Установить iptables-persistent? (y/N): " install_confirm
+                if [[ $install_confirm == "y" || $install_confirm == "Y" ]]; then
+                    apt update && apt install -y iptables-persistent
+                    if [ $? -eq 0 ]; then
+                        echo -e "${GREEN}Пакет установлен. Сохраняем правила...${NC}"
+                        # Сохраняем текущие правила
+                        mkdir -p /etc/iptables
+                        iptables-save > /etc/iptables/rules.v4
+                        ip6tables-save > /etc/iptables/rules.v6
+                        echo -e "${GREEN}Правила сохранены для автоматической загрузки${NC}"
+                    else
+                        echo -e "${RED}Ошибка установки iptables-persistent${NC}"
+                    fi
+                fi
             fi
             ;;
         6)
