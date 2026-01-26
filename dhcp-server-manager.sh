@@ -46,7 +46,8 @@ show_menu() {
     echo -e "${BLUE}║${NC} 19. Управление IP Forwarding (перенаправление трафика)            ${BLUE}║${NC}"
     echo -e "${BLUE}║${NC} 20. Управление UFW (брандмауэр)                                   ${BLUE}║${NC}"
     echo -e "${BLUE}║${NC} 21. Управление iptables (правила фаервола)                        ${BLUE}║${NC}"
-    echo -e "${BLUE}║${NC} 22. Выход                                                         ${BLUE}║${NC}"
+    echo -e "${BLUE}║${NC} 22. Управление маршрутизацией (добавить/удалить маршруты)         ${BLUE}║${NC}"
+    echo -e "${BLUE}║${NC} 23. Выход                                                         ${BLUE}║${NC}"
     echo -e "${BLUE}╚═══════════════════════════════════════════════════════════════════════════════╝${NC}"
     echo -n "Выберите опцию [1-22]: "
 }
@@ -1527,6 +1528,351 @@ manage_iptables() {
     read -p "Нажмите Enter для продолжения..."
 }
 
+# Функция 22: Управление маршрутизацией
+manage_routing() {
+    echo -e "\n${GREEN}=== УПРАВЛЕНИЕ МАРШРУТИЗАЦИЕЙ ===${NC}\n"
+
+    echo -e "${YELLOW}Текущая таблица маршрутизации:${NC}"
+    echo "══════════════════════════════════════════"
+    ip -c route show
+    echo ""
+
+    # Показать доступные интерфейсы
+    echo -e "${YELLOW}Доступные сетевые интерфейсы:${NC}"
+    echo "══════════════════════════════════════════"
+    interfaces=($(ip -o link show | awk -F': ' '{print $2}' | grep -v lo))
+
+    for i in "${!interfaces[@]}"; do
+        iface="${interfaces[$i]}"
+        ip_addr=$(ip -4 addr show $iface 2>/dev/null | grep -oP 'inet \K[\d.]+' | head -1)
+        status=$(ip link show $iface | grep -q "state UP" && echo -e "${GREEN}UP${NC}" || echo -e "${RED}DOWN${NC}")
+        echo "  $((i+1)). $iface [IP: ${ip_addr:-нет}, Статус: $status]"
+    done
+    echo ""
+
+    echo -e "${YELLOW}Опции управления маршрутизацией:${NC}"
+    echo "1. Добавить маршрут по умолчанию (шлюз)"
+    echo "2. Добавить статический маршрут к сети"
+    echo "3. Удалить маршрут"
+    echo "4. Показать подробную таблицу маршрутизации"
+    echo "5. Очистить все статические маршруты"
+    echo "6. Настроить маршрут через systemd-networkd"
+    echo "7. Проверить маршрут до хоста"
+    read -p "Выберите опцию [1-7]: " routing_option
+
+    case $routing_option in
+        1)
+            # Добавить маршрут по умолчанию
+            echo -e "\n${YELLOW}Добавление маршрута по умолчанию:${NC}"
+
+            # Выбор интерфейса
+            if [ ${#interfaces[@]} -eq 0 ]; then
+                echo -e "${RED}Нет доступных интерфейсов!${NC}"
+                return 1
+            fi
+
+            echo "Выберите интерфейс для маршрута по умолчанию:"
+            for i in "${!interfaces[@]}"; do
+                echo "  $((i+1)). ${interfaces[$i]}"
+            done
+            echo "  0. Ввести вручную"
+
+            read -p "Выберите номер [0-${#interfaces[@]}]: " iface_choice
+
+            if [[ "$iface_choice" =~ ^[0-9]+$ ]]; then
+                if [ "$iface_choice" -eq 0 ]; then
+                    read -p "Введите имя интерфейса: " gateway_iface
+                elif [ "$iface_choice" -ge 1 ] && [ "$iface_choice" -le ${#interfaces[@]} ]; then
+                    gateway_iface="${interfaces[$((iface_choice-1))]}"
+                else
+                    echo -e "${RED}Неверный номер!${NC}"
+                    return 1
+                fi
+            fi
+
+            # Получаем текущий IP на интерфейсе для подсказки шлюза
+            current_ip=$(ip -4 addr show $gateway_iface 2>/dev/null | grep -oP 'inet \K[\d.]+' | head -1)
+            if [ -n "$current_ip" ]; then
+                gateway_hint=$(echo $current_ip | sed 's/\.[0-9]*$/.1/')
+                echo "Текущий IP на $gateway_iface: $current_ip"
+                echo "Предполагаемый шлюз: $gateway_hint"
+            fi
+
+            read -p "Введите IP адрес шлюза: " gateway_ip
+            if [ -z "$gateway_ip" ]; then
+                echo -e "${RED}Шлюз не указан!${NC}"
+                return 1
+            fi
+
+            # Проверяем существующий маршрут по умолчанию
+            existing_default=$(ip route show default 2>/dev/null)
+            if [ -n "$existing_default" ]; then
+                echo -e "${YELLOW}Существующий маршрут по умолчанию:${NC}"
+                echo "$existing_default"
+                read -p "Заменить его? (y/N): " replace_conf
+                if [[ "$replace_conf" =~ ^[Yy]$ ]]; then
+                    ip route del default 2>/dev/null
+                fi
+            fi
+
+            # Добавляем маршрут
+            echo "Добавляем маршрут: default via $gateway_ip dev $gateway_iface"
+            ip route add default via $gateway_ip dev $gateway_iface
+
+            # Проверяем
+            if ip route show default | grep -q "$gateway_iface"; then
+                echo -e "${GREEN}Маршрут по умолчанию добавлен успешно!${NC}"
+            else
+                echo -e "${RED}Ошибка добавления маршрута!${NC}"
+            fi
+            ;;
+
+        2)
+            # Добавить статический маршрут к сети
+            echo -e "\n${YELLOW}Добавление статического маршрута:${NC}"
+
+            read -p "Введите сеть назначения (например: 192.168.2.0/24): " dest_network
+            if [ -z "$dest_network" ]; then
+                echo -e "${RED}Сеть не указана!${NC}"
+                return 1
+            fi
+
+            echo "Выберите способ указания шлюза:"
+            echo "1. Через IP адрес шлюза"
+            echo "2. Через интерфейс (для подключенных сетей)"
+            read -p "Выберите [1-2]: " gw_method
+
+            case $gw_method in
+                1)
+                    read -p "Введите IP адрес шлюза: " gateway_ip
+                    if [ -z "$gateway_ip" ]; then
+                        echo -e "${RED}Шлюз не указан!${NC}"
+                        return 1
+                    fi
+
+                    # Добавляем маршрут через шлюз
+                    echo "Добавляем маршрут: $dest_network via $gateway_ip"
+                    ip route add $dest_network via $gateway_ip
+
+                    if ip route show | grep -q "$dest_network"; then
+                        echo -e "${GREEN}Маршрут добавлен успешно!${NC}"
+                    else
+                        echo -e "${RED}Ошибка добавления маршрута!${NC}"
+                    fi
+                    ;;
+
+                2)
+                    # Выбор интерфейса
+                    echo "Выберите интерфейс для маршрута:"
+                    for i in "${!interfaces[@]}"; do
+                        echo "  $((i+1)). ${interfaces[$i]}"
+                    done
+                    echo "  0. Ввести вручную"
+
+                    read -p "Выберите номер [0-${#interfaces[@]}]: " iface_choice
+
+                    if [[ "$iface_choice" =~ ^[0-9]+$ ]]; then
+                        if [ "$iface_choice" -eq 0 ]; then
+                            read -p "Введите имя интерфейса: " route_iface
+                        elif [ "$iface_choice" -ge 1 ] && [ "$iface_choice" -le ${#interfaces[@]} ]; then
+                            route_iface="${interfaces[$((iface_choice-1))]}"
+                        else
+                            echo -e "${RED}Неверный номер!${NC}"
+                            return 1
+                        fi
+                    fi
+
+                    # Добавляем маршрут через интерфейс
+                    echo "Добавляем маршрут: $dest_network dev $route_iface"
+                    ip route add $dest_network dev $route_iface
+
+                    if ip route show | grep -q "$dest_network.*dev $route_iface"; then
+                        echo -e "${GREEN}Маршрут добавлен успешно!${NC}"
+                    else
+                        echo -e "${RED}Ошибка добавления маршрута!${NC}"
+                    fi
+                    ;;
+
+                *)
+                    echo "Неверный выбор"
+                    return 1
+                    ;;
+            esac
+            ;;
+
+        3)
+            # Удалить маршрут
+            echo -e "\n${YELLOW}Удаление маршрута:${NC}"
+
+            echo "Текущие маршруты:"
+            ip route show | grep -v "^default" | cat -n
+
+            read -p "Введите номер маршрута для удаления: " route_num
+            route_to_delete=$(ip route show | grep -v "^default" | sed -n "${route_num}p")
+
+            if [ -z "$route_to_delete" ]; then
+                echo -e "${RED}Маршрут не найден!${NC}"
+                return 1
+            fi
+
+            echo "Удаляем маршрут: $route_to_delete"
+            read -p "Вы уверены? (y/N): " confirm
+            if [[ "$confirm" =~ ^[Yy]$ ]]; then
+                ip route del $route_to_delete
+                echo -e "${GREEN}Маршрут удален!${NC}"
+            fi
+            ;;
+
+        4)
+            # Подробная таблица маршрутизации
+            echo -e "\n${YELLOW}Подробная таблица маршрутизации:${NC}"
+            echo "══════════════════════════════════════════"
+            ip route show table all 2>/dev/null || ip route show
+            echo ""
+
+            # Показать таблицу ARP
+            echo -e "${YELLOW}ARP таблица:${NC}"
+            echo "══════════════════════════════════════════"
+            ip neigh show
+            ;;
+
+        5)
+            # Очистить все статические маршруты
+            echo -e "\n${RED}Очистка всех статических маршрутов:${NC}"
+            read -p "Вы уверены, что хотите удалить ВСЕ статические маршруты? (y/N): " confirm
+
+            if [[ "$confirm" =~ ^[Yy]$ ]]; then
+                # Сохраняем только маршрут по умолчанию и подключенные сети
+                default_route=$(ip route show default 2>/dev/null)
+                connected_routes=$(ip route show | grep -E "^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/[0-9]+ dev " | awk '{print $1}')
+
+                # Удаляем все маршруты кроме подключенных сетей
+                ip route show | grep -v "^default" | grep -v -E "^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/[0-9]+ dev " | while read route; do
+                    ip route del $route 2>/dev/null
+                done
+
+                echo -e "${GREEN}Статические маршруты очищены!${NC}"
+                echo "Сохранены:"
+                echo "  - Маршрут по умолчанию: ${default_route:-нет}"
+                echo "  - Подключенные сети: $(echo $connected_routes | wc -w) сетей"
+            fi
+            ;;
+
+        6)
+            # Настроить маршрут через systemd-networkd
+            echo -e "\n${YELLOW}Настройка маршрута через systemd-networkd:${NC}"
+
+            if [ ! -d "$NETWORKD_DIR" ]; then
+                echo -e "${RED}Директория systemd-networkd не найдена!${NC}"
+                return 1
+            fi
+
+            # Выбор интерфейса
+            echo "Выберите интерфейс для настройки:"
+            for i in "${!interfaces[@]}"; do
+                echo "  $((i+1)). ${interfaces[$i]}"
+            done
+
+            read -p "Выберите номер [1-${#interfaces[@]}]: " iface_choice
+            if [ "$iface_choice" -ge 1 ] && [ "$iface_choice" -le ${#interfaces[@]} ]; then
+                network_iface="${interfaces[$((iface_choice-1))]}"
+
+                # Проверяем существующий конфиг
+                network_file="$NETWORKD_DIR/10-$network_iface.network"
+                if [ -f "$network_file" ]; then
+                    echo -e "${YELLOW}Текущий конфиг $network_file:${NC}"
+                    cat "$network_file"
+                    read -p "Перезаписать? (y/N): " overwrite
+                    if [[ ! "$overwrite" =~ ^[Yy]$ ]]; then
+                        echo "Отмена"
+                        return 1
+                    fi
+                fi
+
+                # Настройка маршрутов
+                echo -e "\nНастройка маршрутов для $network_iface:"
+                echo "1. Только маршрут по умолчанию"
+                echo "2. Маршрут по умолчанию + статические маршруты"
+                echo "3. Только статические маршруты (без default)"
+                read -p "Выберите [1-3]: " route_type
+
+                read -p "Введите IP адрес шлюза для default маршрута: " sysd_gateway
+
+                # Собираем статические маршруты
+                routes=""
+                if [[ "$route_type" =~ ^[23]$ ]]; then
+                    echo "Введите статические маршруты (оставьте пустым для завершения):"
+                    route_count=0
+                    while true; do
+                        read -p "Маршрут $((route_count+1)) (сеть/маска шлюз): " static_route
+                        if [ -z "$static_route" ]; then
+                            break
+                        fi
+                        routes="$routes\nRoute=$static_route"
+                        route_count=$((route_count+1))
+                    done
+                fi
+
+                # Создаем конфиг
+                mkdir -p $NETWORKD_DIR
+                cat > "$network_file" << EOF
+[Match]
+Name=$network_iface
+
+[Network]
+$( [ -n "$sysd_gateway" ] && echo "Gateway=$sysd_gateway" )
+$( [ -n "$routes" ] && echo -e "$routes" )
+EOF
+
+                echo -e "\n${GREEN}Конфиг создан:${NC}"
+                cat "$network_file"
+
+                # Применяем
+                echo -e "\nПрименяем изменения..."
+                systemctl restart systemd-networkd
+
+                echo -e "\n${GREEN}Новая таблица маршрутизации:${NC}"
+                ip route show
+            fi
+            ;;
+
+        7)
+            # Проверить маршрут до хоста
+            echo -e "\n${YELLOW}Проверка маршрута до хоста:${NC}"
+
+            read -p "Введите IP адрес или домен для проверки: " check_host
+
+            if [ -z "$check_host" ]; then
+                echo -e "${RED}Хост не указан!${NC}"
+                return 1
+            fi
+
+            echo -e "\n${GREEN}Traceroute до $check_host:${NC}"
+            if command -v traceroute >/dev/null; then
+                traceroute -n -m 5 $check_host 2>/dev/null || echo "Traceroute не доступен"
+            else
+                echo "Установите traceroute: apt install traceroute"
+            fi
+
+            echo -e "\n${GREEN}Проверка маршрута через mtr:${NC}"
+            if command -v mtr >/dev/null; then
+                mtr -n -c 3 $check_host 2>/dev/null || echo "MTR не доступен"
+            else
+                echo "Установите mtr: apt install mtr"
+            fi
+            ;;
+
+        *)
+            echo "Неверный выбор"
+            ;;
+    esac
+
+    echo -e "\n${YELLOW}Текущая таблица маршрутизации:${NC}"
+    ip -c route show
+
+    read -p "Нажмите Enter для продолжения..."
+}
+
 # Основной цикл
 main() {
     check_root
@@ -1557,7 +1903,8 @@ main() {
             19) manage_ip_forwarding ;;
             20) manage_ufw ;;
             21) manage_iptables ;;
-            22)
+            22) manage_routing ;;
+            23)
                 echo "Выход"
                 exit 0
                 ;;
