@@ -22,13 +22,13 @@ NETWORKD_DIR="/etc/systemd/network"
 # Функция для отображения меню
 show_menu() {
     clear
-    echo -e "${BLUE}╔════════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${BLUE}║         DHCP Server Manager - Ubuntu Server 24.04            ║${NC}"
-    echo -e "${BLUE}╠════════════════════════════════════════════════════════════════╣${NC}"
-    echo -e "${BLUE}║${NC} 1.  Полная диагностика сети и DHCP сервера              ${BLUE}║${NC}"
+    echo -e "${BLUE}╔════════════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${BLUE}║         DHCP Server Manager - Ubuntu Server 24.04                  ║${NC}"
+    echo -e "${BLUE}╠════════════════════════════════════════════════════════════════════╣${NC}"
+    echo -e "${BLUE}║${NC} 1.  Полная диагностика сети и DHCP сервера             ${BLUE}║${NC}"
     echo -e "${BLUE}║${NC} 2.  Настроить DHCP сервер (isc-dhcp-server)            ${BLUE}║${NC}"
     echo -e "${BLUE}║${NC} 3.  Настроить DHCP сервер (dnsmasq - проще)            ${BLUE}║${NC}"
-    echo -e "${BLUE}║${NC} 4.  Настроить DHCP сервер (systemd-networkd - встроенный) ${BLUE}║${NC}"
+    echo -e "${BLUE}║${NC} 4.  Настроить DHCP сервер (systemd-networkd)           ${BLUE}║${NC}"
     echo -e "${BLUE}║${NC} 5.  Проверить и исправить IP адрес на интерфейсе       ${BLUE}║${NC}"
     echo -e "${BLUE}║${NC} 6.  Показать логи DHCP сервера                         ${BLUE}║${NC}"
     echo -e "${BLUE}║${NC} 7.  Проверить клиентов DHCP (аренды)                   ${BLUE}║${NC}"
@@ -46,8 +46,8 @@ show_menu() {
     echo -e "${BLUE}║${NC} 19. Управление IP Forwarding (перенаправление трафика) ${BLUE}║${NC}"
     echo -e "${BLUE}║${NC} 20. Управление UFW (брандмауэр)                        ${BLUE}║${NC}"
     echo -e "${BLUE}║${NC} 21. Управление iptables (правила фаервола)             ${BLUE}║${NC}"
-    echo -e "${BLUE}║${NC} 22. Выход                                             ${BLUE}║${NC}"
-    echo -e "${BLUE}╚════════════════════════════════════════════════════════════════╝${NC}"
+    echo -e "${BLUE}║${NC} 22. Выход                                              ${BLUE}║${NC}"
+    echo -e "${BLUE}╚════════════════════════════════════════════════════════════════════╝${NC}"
     echo -n "Выберите опцию [1-22]: "
 }
 
