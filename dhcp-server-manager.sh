@@ -22,32 +22,32 @@ NETWORKD_DIR="/etc/systemd/network"
 # Функция для отображения меню
 show_menu() {
     clear
-    echo -e "${BLUE}╔════════════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${BLUE}║         DHCP Server Manager - Ubuntu Server 24.04                  ║${NC}"
-    echo -e "${BLUE}╠════════════════════════════════════════════════════════════════════╣${NC}"
-    echo -e "${BLUE}║${NC} 1.  Полная диагностика сети и DHCP сервера             ${BLUE}║${NC}"
-    echo -e "${BLUE}║${NC} 2.  Настроить DHCP сервер (isc-dhcp-server)            ${BLUE}║${NC}"
-    echo -e "${BLUE}║${NC} 3.  Настроить DHCP сервер (dnsmasq - проще)            ${BLUE}║${NC}"
-    echo -e "${BLUE}║${NC} 4.  Настроить DHCP сервер (systemd-networkd)           ${BLUE}║${NC}"
-    echo -e "${BLUE}║${NC} 5.  Проверить и исправить IP адрес на интерфейсе       ${BLUE}║${NC}"
-    echo -e "${BLUE}║${NC} 6.  Показать логи DHCP сервера                         ${BLUE}║${NC}"
-    echo -e "${BLUE}║${NC} 7.  Проверить клиентов DHCP (аренды)                   ${BLUE}║${NC}"
-    echo -e "${BLUE}║${NC} 8.  Мониторинг DHCP трафика в реальном времени         ${BLUE}║${NC}"
-    echo -e "${BLUE}║${NC} 9.  Управление systemd-networkd                        ${BLUE}║${NC}"
-    echo -e "${BLUE}║${NC} 10. Просмотр конфигурации systemd-networkd             ${BLUE}║${NC}"
-    echo -e "${BLUE}║${NC} 11. Сбросить все сетевые настройки по умолчанию        ${BLUE}║${NC}"
-    echo -e "${BLUE}║${NC} 12. Резервное копирование сетевых конфигураций         ${BLUE}║${NC}"
-    echo -e "${BLUE}║${NC} 13. Восстановить из резервной копии                    ${BLUE}║${NC}"
-    echo -e "${BLUE}║${NC} 14. Установить/переустановить DHCP сервер              ${BLUE}║${NC}"
-    echo -e "${BLUE}║${NC} 15. Перезапустить сетевые службы                       ${BLUE}║${NC}"
-    echo -e "${BLUE}║${NC} 16. Настроить статический IP на интерфейсе             ${BLUE}║${NC}"
-    echo -e "${BLUE}║${NC} 17. Показать текущую конфигурацию сети                 ${BLUE}║${NC}"
-    echo -e "${BLUE}║${NC} 18. Тестирование соединения                            ${BLUE}║${NC}"
-    echo -e "${BLUE}║${NC} 19. Управление IP Forwarding (перенаправление трафика) ${BLUE}║${NC}"
-    echo -e "${BLUE}║${NC} 20. Управление UFW (брандмауэр)                        ${BLUE}║${NC}"
-    echo -e "${BLUE}║${NC} 21. Управление iptables (правила фаервола)             ${BLUE}║${NC}"
-    echo -e "${BLUE}║${NC} 22. Выход                                              ${BLUE}║${NC}"
-    echo -e "${BLUE}╚════════════════════════════════════════════════════════════════════╝${NC}"
+    echo -e "${BLUE}╔═══════════════════════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${BLUE}║         DHCP Server Manager - Ubuntu Server 24.04                             ║${NC}"
+    echo -e "${BLUE}╠═══════════════════════════════════════════════════════════════════════════════╣${NC}"
+    echo -e "${BLUE}║${NC} 1.  Полная диагностика сети и DHCP сервера                        ${BLUE}║${NC}"
+    echo -e "${BLUE}║${NC} 2.  Настроить DHCP сервер (isc-dhcp-server)                       ${BLUE}║${NC}"
+    echo -e "${BLUE}║${NC} 3.  Настроить DHCP сервер (dnsmasq - проще)                       ${BLUE}║${NC}"
+    echo -e "${BLUE}║${NC} 4.  Настроить DHCP сервер (systemd-networkd)                      ${BLUE}║${NC}"
+    echo -e "${BLUE}║${NC} 5.  Проверить и исправить IP адрес на интерфейсе                  ${BLUE}║${NC}"
+    echo -e "${BLUE}║${NC} 6.  Показать логи DHCP сервера                                    ${BLUE}║${NC}"
+    echo -e "${BLUE}║${NC} 7.  Проверить клиентов DHCP (аренды)                              ${BLUE}║${NC}"
+    echo -e "${BLUE}║${NC} 8.  Мониторинг DHCP трафика в реальном времени                    ${BLUE}║${NC}"
+    echo -e "${BLUE}║${NC} 9.  Управление systemd-networkd                                   ${BLUE}║${NC}"
+    echo -e "${BLUE}║${NC} 10. Просмотр конфигурации systemd-networkd                        ${BLUE}║${NC}"
+    echo -e "${BLUE}║${NC} 11. Сбросить все сетевые настройки по умолчанию                   ${BLUE}║${NC}"
+    echo -e "${BLUE}║${NC} 12. Резервное копирование сетевых конфигураций                    ${BLUE}║${NC}"
+    echo -e "${BLUE}║${NC} 13. Восстановить из резервной копии                               ${BLUE}║${NC}"
+    echo -e "${BLUE}║${NC} 14. Установить/переустановить DHCP сервер                         ${BLUE}║${NC}"
+    echo -e "${BLUE}║${NC} 15. Перезапустить сетевые службы                                  ${BLUE}║${NC}"
+    echo -e "${BLUE}║${NC} 16. Настроить статический IP на интерфейсе                        ${BLUE}║${NC}"
+    echo -e "${BLUE}║${NC} 17. Показать текущую конфигурацию сети                            ${BLUE}║${NC}"
+    echo -e "${BLUE}║${NC} 18. Тестирование соединения                                       ${BLUE}║${NC}"
+    echo -e "${BLUE}║${NC} 19. Управление IP Forwarding (перенаправление трафика)            ${BLUE}║${NC}"
+    echo -e "${BLUE}║${NC} 20. Управление UFW (брандмауэр)                                   ${BLUE}║${NC}"
+    echo -e "${BLUE}║${NC} 21. Управление iptables (правила фаервола)                        ${BLUE}║${NC}"
+    echo -e "${BLUE}║${NC} 22. Выход                                                         ${BLUE}║${NC}"
+    echo -e "${BLUE}╚═══════════════════════════════════════════════════════════════════════════════╝${NC}"
     echo -n "Выберите опцию [1-22]: "
 }
 
@@ -366,15 +366,15 @@ EOF
 # Функция 4: Настройка DHCP через systemd-networkd
 setup_systemd_networkd_dhcp() {
     echo -e "\n${GREEN}=== НАСТРОЙКА DHCP СЕРВЕРА (SYSTEMD-NETWORKD) ===${NC}\n"
-
+    
     echo -e "${YELLOW}Доступные сетевые интерфейсы:${NC}"
     interfaces=($(ip -o link show | awk -F': ' '{print $2}' | grep -v lo))
-    
+
     if [ ${#interfaces[@]} -eq 0 ]; then
         echo -e "${RED}Нет доступных сетевых интерфейсов!${NC}"
         return 1
     fi
-    
+
     # Отображаем список интерфейсов с информацией
     for i in "${!interfaces[@]}"; do
         iface="${interfaces[$i]}"
@@ -382,7 +382,7 @@ setup_systemd_networkd_dhcp() {
         ip_addr=$(ip -4 addr show $iface 2>/dev/null | grep -oP 'inet \K[\d.]+' | head -1)
         echo "  $((i+1)). $iface [Статус: $status, IP: ${ip_addr:-нет}]"
     done
-    
+
     # Выбор интерфейса
     while true; do
         echo -e "\n${GREEN}Выберите интерфейс для настройки DHCP:${NC}"
@@ -390,9 +390,9 @@ setup_systemd_networkd_dhcp() {
             echo "  $((i+1)). ${interfaces[$i]}"
         done
         echo "  0. Вручную ввести имя интерфейса"
-        
+
         read -p "Введите номер [0-${#interfaces[@]}]: " choice
-        
+
         if [[ "$choice" =~ ^[0-9]+$ ]]; then
             if [ "$choice" -eq 0 ]; then
                 read -p "Введите имя интерфейса вручную: " interface
@@ -413,13 +413,13 @@ setup_systemd_networkd_dhcp() {
             echo -e "${RED}Введите число!${NC}"
         fi
     done
-    
+
     echo -e "\n${GREEN}Выбран интерфейс: $interface${NC}"
-    
+
     # Показываем текущую конфигурацию интерфейса
     echo -e "\n${YELLOW}Текущая конфигурация $interface:${NC}"
     ip addr show $interface 2>/dev/null | head -20
-    
+
     read -p "Продолжить с этим интерфейсом? [Y/n]: " confirm
     if [[ "$confirm" =~ ^[Nn]$ ]]; then
         echo -e "${YELLOW}Отмена настройки.${NC}"
@@ -1347,14 +1347,74 @@ manage_iptables() {
             ;;
         7)
             # Правила для NAT
+
+            # Получаем список активных сетевых интерфейсов
+            echo -e "${YELLOW}Доступные сетевые интерфейсы:${NC}"
+            echo "----------------------------------------"
+            ip -o link show | awk -F': ' '{print $2}' | while read iface; do
+                ip_addr=$(ip -4 addr show $iface 2>/dev/null | awk '/inet/ {print $2}' | head -1)
+                mac_addr=$(ip link show $iface | awk '/link\/ether/ {print $2}' | head -1)
+                status=$(ip link show $iface | grep -q 'state UP' && echo -e "${GREEN}UP${NC}" || echo -e "${RED}DOWN${NC}")
+
+                if [ -n "$ip_addr" ]; then
+                    echo -e "  $iface \t| $ip_addr \t| $mac_addr \t| $status"
+                else
+                    echo -e "  $iface \t| Нет IPv4 \t| $mac_addr \t| $status"
+                fi
+            done
+            echo "----------------------------------------"
+
+            # Выбор внутреннего интерфейса
+            echo ""
             read -p "Введите внутренний интерфейс [$DEFAULT_INTERFACE]: " internal_if
             internal_if=${internal_if:-$DEFAULT_INTERFACE}
 
-            read -p "Введите внешний интерфейс (обычно с доступом в интернет): " external_if
+            # Проверка существования интерфейса
+            while ! ip link show $internal_if >/dev/null 2>&1; do
+                echo -e "${RED}Ошибка: интерфейс $internal_if не существует!${NC}"
+                read -p "Введите корректное имя внутреннего интерфейса: " internal_if
+            done
+
+            # Выбор внешнего интерфейса
+            echo ""
+            read -p "Введите внешний интерфейс (обычно с доступом в интернет) или нажмите Enter для автоопределения: " external_if
+
             if [ -z "$external_if" ]; then
+                # Автоопределение шлюза по умолчанию
                 external_if=$(ip route show default | awk '/default/ {print $5}')
-                echo "Автоопределение: внешний интерфейс - $external_if"
+
+                # Если не удалось автоопределить, запросить вручную
+                if [ -z "$external_if" ]; then
+                    echo -e "${YELLOW}Не удалось автоопределить внешний интерфейс.${NC}"
+                    read -p "Введите внешний интерфейс вручную: " external_if
+                else
+                    echo -e "${GREEN}Автоопределение: внешний интерфейс - $external_if${NC}"
+                fi
             fi
+
+            # Проверка существования внешнего интерфейса
+            while ! ip link show $external_if >/dev/null 2>&1; do
+                echo -e "${RED}Ошибка: интерфейс $external_if не существует!${NC}"
+                read -p "Введите корректное имя внешнего интерфейса: " external_if
+            done
+
+            # Проверка, что интерфейсы разные
+            if [ "$internal_if" = "$external_if" ]; then
+                echo -e "${RED}Ошибка: внутренний и внешний интерфейсы не могут быть одинаковыми!${NC}"
+                read -p "Хотите изменить выбор? (y/N): " change_choice
+                if [[ $change_choice =~ ^[Yy]$ ]]; then
+                    read -p "Введите внутренний интерфейс: " internal_if
+                    read -p "Введите внешний интерфейс: " external_if
+                fi
+            fi
+
+            # Подтверждение выбора
+            echo ""
+            echo -e "${YELLOW}Подтвердите выбор интерфейсов:${NC}"
+            echo "Внутренний интерфейс: $internal_if"
+            echo "Внешний интерфейс: $external_if"
+            read -p "Продолжить настройку? (Y/n): " confirm
+            [[ $confirm =~ ^[Nn]$ ]] && continue
 
             echo "Добавляем правила NAT..."
 
