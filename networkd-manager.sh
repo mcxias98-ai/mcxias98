@@ -640,15 +640,15 @@ manage_systemd_networkd() {
 # Функция 10: Просмотр конфигурации systemd-networkd
 view_systemd_networkd_config() {
     echo -e "\n${GREEN}=== КОНФИГУРАЦИЯ SYSTEMD-NETWORKD ===${NC}\n"
-    
+
     if [[ ! -d "$NETWORKD_DIR" ]]; then
         echo "Директория не существует"
         return
     fi
-    
+
     echo "Файлы конфигурации:"
     ls -la "$NETWORKD_DIR/" 2>/dev/null || echo "Нет файлов"
-    
+
     echo -e "\nСодержимое файлов .network:"
     for file in "$NETWORKD_DIR"/*.network; do
         if [[ -f "$file" ]]; then
@@ -656,10 +656,10 @@ view_systemd_networkd_config() {
             cat "$file"
         fi
     done 2>/dev/null
-    
+
     echo -e "\nТекущее состояние:"
     systemctl status systemd-networkd --no-pager -l | head -20
-    
+
     read -p "Нажмите Enter для продолжения..."
 }
 
