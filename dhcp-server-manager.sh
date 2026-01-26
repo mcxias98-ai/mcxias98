@@ -366,9 +366,65 @@ EOF
 # Функция 4: Настройка DHCP через systemd-networkd
 setup_systemd_networkd_dhcp() {
     echo -e "\n${GREEN}=== НАСТРОЙКА DHCP СЕРВЕРА (SYSTEMD-NETWORKD) ===${NC}\n"
+
+    echo -e "${YELLOW}Доступные сетевые интерфейсы:${NC}"
+    interfaces=($(ip -o link show | awk -F': ' '{print $2}' | grep -v lo))
     
-    read -p "Введите имя интерфейса [$DEFAULT_INTERFACE]: " interface
-    interface=${interface:-$DEFAULT_INTERFACE}
+    if [ ${#interfaces[@]} -eq 0 ]; then
+        echo -e "${RED}Нет доступных сетевых интерфейсов!${NC}"
+        return 1
+    fi
+    
+    # Отображаем список интерфейсов с информацией
+    for i in "${!interfaces[@]}"; do
+        iface="${interfaces[$i]}"
+        status=$(ip link show $iface | grep -o "state [A-Z]*" | cut -d' ' -f2)
+        ip_addr=$(ip -4 addr show $iface 2>/dev/null | grep -oP 'inet \K[\d.]+' | head -1)
+        echo "  $((i+1)). $iface [Статус: $status, IP: ${ip_addr:-нет}]"
+    done
+    
+    # Выбор интерфейса
+    while true; do
+        echo -e "\n${GREEN}Выберите интерфейс для настройки DHCP:${NC}"
+        for i in "${!interfaces[@]}"; do
+            echo "  $((i+1)). ${interfaces[$i]}"
+        done
+        echo "  0. Вручную ввести имя интерфейса"
+        
+        read -p "Введите номер [0-${#interfaces[@]}]: " choice
+        
+        if [[ "$choice" =~ ^[0-9]+$ ]]; then
+            if [ "$choice" -eq 0 ]; then
+                read -p "Введите имя интерфейса вручную: " interface
+                # Проверяем существование введенного интерфейса
+                if ip link show "$interface" &>/dev/null; then
+                    break
+                else
+                    echo -e "${RED}Интерфейс '$interface' не найден!${NC}"
+                    continue
+                fi
+            elif [ "$choice" -ge 1 ] && [ "$choice" -le ${#interfaces[@]} ]; then
+                interface="${interfaces[$((choice-1))]}"
+                break
+            else
+                echo -e "${RED}Неверный номер! Пожалуйста, выберите от 0 до ${#interfaces[@]}${NC}"
+            fi
+        else
+            echo -e "${RED}Введите число!${NC}"
+        fi
+    done
+    
+    echo -e "\n${GREEN}Выбран интерфейс: $interface${NC}"
+    
+    # Показываем текущую конфигурацию интерфейса
+    echo -e "\n${YELLOW}Текущая конфигурация $interface:${NC}"
+    ip addr show $interface 2>/dev/null | head -20
+    
+    read -p "Продолжить с этим интерфейсом? [Y/n]: " confirm
+    if [[ "$confirm" =~ ^[Nn]$ ]]; then
+        echo -e "${YELLOW}Отмена настройки.${NC}"
+        return 1
+    fi
     
     echo -e "\n${YELLOW}Выберите режим:${NC}"
     echo "1. Только DHCP сервер (раздача адресов клиентам)"
