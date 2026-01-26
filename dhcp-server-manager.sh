@@ -867,41 +867,116 @@ check_dhcp_clients() {
 # Функция 8: Мониторинг DHCP трафика
 monitor_dhcp_traffic() {
     echo -e "\n${GREEN}=== МОНИТОРИНГ DHCP ТРАФИКА ===${NC}\n"
-    
+
     if ! command -v tcpdump &> /dev/null; then
         echo "Установка tcpdump..."
         apt update && apt install -y tcpdump
     fi
-    
-    read -p "Введите имя интерфейса [$DEFAULT_INTERFACE]: " interface
-    interface=${interface:-$DEFAULT_INTERFACE}
-    
+
+    # Получение списка сетевых интерфейсов
+    echo -e "${YELLOW}Доступные сетевые интерфейсы:${NC}"
+    interfaces=($(ip link show | awk -F': ' '/^[0-9]+:/{print $2}' | grep -v lo))
+
+    if [ ${#interfaces[@]} -eq 0 ]; then
+        echo "Не удалось обнаружить сетевые интерфейсы"
+        read -p "Нажмите Enter для продолжения..."
+        return
+    fi
+
+    # Интерактивный выбор интерфейса
+    echo -e "\n${CYAN}Выберите сетевой интерфейс:${NC}"
+    for i in "${!interfaces[@]}"; do
+        echo "$((i+1)). ${interfaces[$i]}"
+    done
+
+    while true; do
+        read -p "Введите номер интерфейса [1-${#interfaces[@]}] (по умолчанию 1): " interface_choice
+        interface_choice=${interface_choice:-1}
+
+        if [[ "$interface_choice" =~ ^[0-9]+$ ]] && [ "$interface_choice" -ge 1 ] && [ "$interface_choice" -le "${#interfaces[@]}" ]; then
+            interface="${interfaces[$((interface_choice-1))]}"
+            break
+        else
+            echo -e "${RED}Неверный выбор. Пожалуйста, введите число от 1 до ${#interfaces[@]}${NC}"
+        fi
+    done
+
+    echo -e "\n${GREEN}Выбран интерфейс: $interface${NC}"
+
+    # Ввод таймаута
+    while true; do
+        read -p "Введите время мониторинга в секундах [10-3600] (по умолчанию 60): " timeout_input
+        timeout_input=${timeout_input:-60}
+
+        if [[ "$timeout_input" =~ ^[0-9]+$ ]] && [ "$timeout_input" -ge 10 ] && [ "$timeout_input" -le 3600 ]; then
+            timeout_value=$timeout_input
+            break
+        else
+            echo -e "${RED}Неверное значение. Пожалуйста, введите число от 10 до 3600${NC}"
+        fi
+    done
+
+    echo -e "\n${CYAN}Опции мониторинга:${NC}"
     echo "1. Краткий мониторинг"
     echo "2. Подробный мониторинг"
-    echo "3. Запись в файл"
-    read -p "Выберите опцию [1-3]: " monitor_option
-    
-    echo -e "\n${GREEN}Начинаем мониторинг...${NC}"
-    echo "Нажмите Ctrl+C для остановки"
-    
+    echo "3. Запись в файл (pcap)"
+    echo "4. Постоянный мониторинг (без таймаута)"
+    read -p "Выберите опцию [1-4] (по умолчанию 1): " monitor_option
+    monitor_option=${monitor_option:-1}
+
+    # Обработчик прерываний
+    cleanup() {
+        echo -e "\n${YELLOW}\nЗавершение мониторинга...${NC}"
+        if [ -n "$tcpdump_pid" ]; then
+            kill $tcpdump_pid 2>/dev/null
+        fi
+        exit 0
+    }
+
+    trap cleanup SIGINT SIGTERM
+
+    echo -e "\n${GREEN}Начинаем мониторинг DHCP трафика на интерфейсе $interface...${NC}"
+    echo -e "${YELLOW}Таймаут: ${timeout_value} секунд${NC}"
+    echo -e "${YELLOW}Для остановки нажмите Ctrl+C${NC}\n"
+
     case $monitor_option in
         1)
-            timeout 60 tcpdump -i $interface -n "port 67 or port 68" 2>/dev/null || echo "Мониторинг не удался"
+            echo -e "${CYAN}Краткий мониторинг (только заголовки)...${NC}"
+            timeout $timeout_value tcpdump -i $interface -n "port 67 or port 68" 2>/dev/null &
+            tcpdump_pid=$!
+            wait $tcpdump_pid 2>/dev/null
             ;;
         2)
-            timeout 60 tcpdump -i $interface -n -X "port 67 or port 68" 2>/dev/null || echo "Мониторинг не удался"
+            echo -e "${CYAN}Подробный мониторинг (с содержимым пакетов)...${NC}"
+            timeout $timeout_value tcpdump -i $interface -n -X "port 67 or port 68" 2>/dev/null &
+            tcpdump_pid=$!
+            wait $tcpdump_pid 2>/dev/null
             ;;
         3)
-            pcap_file="/tmp/dhcp_capture_$(date +%s).pcap"
-            echo "Записываем в $pcap_file..."
-            timeout 100 tcpdump -i $interface -n -w $pcap_file "port 67 or port 68" 2>/dev/null
-            echo "Запись завершена"
+            pcap_file="/tmp/dhcp_capture_$(date +%Y%m%d_%H%M%S).pcap"
+            echo -e "${CYAN}Запись в файл: $pcap_file ...${NC}"
+            timeout $timeout_value tcpdump -i $interface -n -w $pcap_file "port 67 or port 68" 2>/dev/null &
+            tcpdump_pid=$!
+            wait $tcpdump_pid 2>/dev/null
+            echo -e "${GREEN}Запись завершена. Файл сохранен: $pcap_file${NC}"
+            echo -e "${YELLOW}Для просмотра файла используйте: tcpdump -r $pcap_file${NC}"
+            ;;
+        4)
+            echo -e "${CYAN}Постоянный мониторинг (без ограничения времени)...${NC}"
+            echo -e "${RED}Внимание: Этот режим будет работать до ручной остановки (Ctrl+C)${NC}"
+            tcpdump -i $interface -n "port 67 or port 68" 2>/dev/null &
+            tcpdump_pid=$!
+            wait $tcpdump_pid 2>/dev/null
             ;;
         *)
-            echo "Неверный выбор"
+            echo -e "${RED}Неверный выбор${NC}"
             ;;
     esac
-    
+
+    # Сброс обработчика прерываний
+    trap - SIGINT SIGTERM
+
+    echo -e "\n${GREEN}Мониторинг завершен${NC}"
     read -p "Нажмите Enter для продолжения..."
 }
 
