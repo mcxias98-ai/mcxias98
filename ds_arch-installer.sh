@@ -1,8 +1,19 @@
 #!/bin/bash
 
 # ============================================================
-# Arch Linux Interactive Installer
+# Arch Linux Interactive Installer (с поддержкой русского языка)
 # ============================================================
+
+# Установка локали для правильного отображения русского языка
+export LANG=ru_RU.UTF-8
+export LANGUAGE=ru_RU.UTF-8
+export LC_ALL=ru_RU.UTF-8
+
+# Проверка и установка локали, если её нет
+if ! locale -a | grep -q ru_RU.utf8; then
+    echo "Установка русской локали..."
+    locale-gen ru_RU.UTF-8 &>/dev/null || true
+fi
 
 # Цвета для вывода
 RED='\033[0;31m'
@@ -307,7 +318,7 @@ esac
 
 # Шрифты
 if get_yes_no "Установить дополнительные шрифты?" "y"; then
-    EXTRA_PKGS="$EXTRA_PKGS ttf-ubuntu-font-family ttf-hack ttf-dejavu ttf-opensans"
+    EXTRA_PKGS="$EXTRA_PKGS ttf-ubuntu-font-family ttf-hack ttf-dejavu ttf-opensans ttf-liberation"
 fi
 
 # Дисплейный менеджер
@@ -387,7 +398,7 @@ genfstab -U /mnt >> /mnt/etc/fstab
 print_success "fstab сгенерирован"
 
 # ============================================================
-# 8. НАСТРОЙКА В CHROOT
+# 8. НАСТРОЙКА В CHROOT (с поддержкой русского языка)
 # ============================================================
 
 print_header "⚙️  НАСТРОЙКА СИСТЕМЫ"
@@ -395,19 +406,26 @@ print_header "⚙️  НАСТРОЙКА СИСТЕМЫ"
 cat > /mnt/root/setup.sh << 'EOF'
 #!/bin/bash
 
+# Установка локалей для русского языка
+echo "Настройка локалей..."
+sed -i 's/^#\(en_US.UTF-8\)/\1/' /etc/locale.gen
+sed -i 's/^#\(ru_RU.UTF-8\)/\1/' /etc/locale.gen
+sed -i 's/^#\(ru_UA.UTF-8\)/\1/' /etc/locale.gen
+locale-gen
+
+# Настройка системной локали
+echo "LANG=ru_RU.UTF-8" > /etc/locale.conf
+echo "LANGUAGE=ru_RU.UTF-8" >> /etc/locale.conf
+echo "LC_ALL=ru_RU.UTF-8" >> /etc/locale.conf
+
+# Настройка клавиатуры
+echo "KEYMAP=ru" > /etc/vconsole.conf
+echo "FONT=cyr-sun16" >> /etc/vconsole.conf
+
 # Часовой пояс
 echo "Настройка часового пояса..."
 ln -sf /usr/share/zoneinfo/Europe/Moscow /etc/localtime
 hwclock --systohc
-
-# Локали
-echo "Настройка локалей..."
-sed -i 's/^#\(en_US.UTF-8\)/\1/' /etc/locale.gen
-sed -i 's/^#\(ru_RU.UTF-8\)/\1/' /etc/locale.gen
-locale-gen
-
-echo "LANG=en_US.UTF-8" > /etc/locale.conf
-echo "KEYMAP=ru" > /etc/vconsole.conf
 
 # Имя хоста
 echo "Введите имя компьютера:"
@@ -460,6 +478,10 @@ grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=GRUB
 # Настройка GRUB (убираем quiet)
 sed -i 's/quiet//g' /etc/default/grub
 
+# Добавляем поддержку русского языка в GRUB
+echo "GRUB_TERMINAL_INPUT=console" >> /etc/default/grub
+echo "GRUB_TERMINAL_OUTPUT=console" >> /etc/default/grub
+
 # Генерация конфига
 grub-mkconfig -o /boot/grub/grub.cfg
 
@@ -501,5 +523,3 @@ echo -e "\n${GREEN}Не забудьте извлечь установочный
 
 # Очистка
 rm -f /mnt/root/setup.sh /mnt/root/bootloader.sh
-
-EOF
