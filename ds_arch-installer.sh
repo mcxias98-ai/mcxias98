@@ -2,109 +2,44 @@
 
 # ============================================================
 # Arch Linux Interactive Installer
-# Полная поддержка русского языка + Wi-Fi настройка
-# Версия: 3.0
+# Полная поддержка русского языка
+# Версия: 4.0
 # ============================================================
 
 # === НАСТРОЙКА РУССКОГО ЯЗЫКА ===
 
-# Функция для установки русской локали в системе
-install_russian_locale() {
+# Принудительная установка русской локали
+export LANG=ru_RU.UTF-8
+export LANGUAGE=ru_RU.UTF-8
+export LC_ALL=ru_RU.UTF-8
+export LC_CTYPE=ru_RU.UTF-8
+export LC_NUMERIC=ru_RU.UTF-8
+export LC_TIME=ru_RU.UTF-8
+export LC_COLLATE=ru_RU.UTF-8
+export LC_MONETARY=ru_RU.UTF-8
+export LC_MESSAGES=ru_RU.UTF-8
+export LC_PAPER=ru_RU.UTF-8
+export LC_NAME=ru_RU.UTF-8
+export LC_ADDRESS=ru_RU.UTF-8
+export LC_TELEPHONE=ru_RU.UTF-8
+export LC_MEASUREMENT=ru_RU.UTF-8
+export LC_IDENTIFICATION=ru_RU.UTF-8
+
+# Проверяем и устанавливаем локаль в системе
+if ! locale -a 2>/dev/null | grep -q "ru_RU.utf8\|ru_RU.UTF-8"; then
     if [ -f /etc/locale.gen ]; then
-        if ! grep -q "^ru_RU.UTF-8" /etc/locale.gen 2>/dev/null; then
-            echo "ru_RU.UTF-8 UTF-8" >> /etc/locale.gen 2>/dev/null
-        fi
+        echo "ru_RU.UTF-8 UTF-8" >> /etc/locale.gen 2>/dev/null
         locale-gen &>/dev/null || true
     fi
-}
-
-# Функция для настройки переменных локали
-setup_locale_vars() {
-    # Пробуем установить русскую локаль
-    if locale -a 2>/dev/null | grep -qi "ru_RU.utf8\|ru_RU.UTF-8"; then
-        export LANG=ru_RU.UTF-8
-        export LANGUAGE=ru_RU.UTF-8:ru:en
-        export LC_ALL=ru_RU.UTF-8
-        export LC_CTYPE=ru_RU.UTF-8
-        export LC_NUMERIC=ru_RU.UTF-8
-        export LC_TIME=ru_RU.UTF-8
-        export LC_COLLATE=ru_RU.UTF-8
-        export LC_MONETARY=ru_RU.UTF-8
-        export LC_MESSAGES=ru_RU.UTF-8
-        export LC_PAPER=ru_RU.UTF-8
-        export LC_NAME=ru_RU.UTF-8
-        export LC_ADDRESS=ru_RU.UTF-8
-        export LC_TELEPHONE=ru_RU.UTF-8
-        export LC_MEASUREMENT=ru_RU.UTF-8
-        export LC_IDENTIFICATION=ru_RU.UTF-8
-        return 0
-    fi
-    
-    # Если русской нет, пробуем en_US
-    if locale -a 2>/dev/null | grep -qi "en_US.utf8\|en_US.UTF-8"; then
-        export LANG=en_US.UTF-8
-        export LANGUAGE=en_US.UTF-8
-        export LC_ALL=en_US.UTF-8
-        return 1
-    fi
-    
-    # Последняя надежда - C.UTF-8
-    export LANG=C.UTF-8
-    export LANGUAGE=C.UTF-8
-    export LC_ALL=C.UTF-8
-    return 2
-}
-
-# Устанавливаем русскую локаль в системе
-install_russian_locale
-
-# Настраиваем переменные
-setup_locale_vars
-
-# Проверяем, работает ли русский язык
-RUSSIAN_TEST="Русский язык работает"
-if ! echo "$RUSSIAN_TEST" | grep -q "работает" 2>/dev/null; then
-    # Если русский не работает, пытаемся использовать перекодировку
-    if command -v iconv &>/dev/null; then
-        # Пробуем конвертировать вывод
-        USE_ICONV=1
-    else
-        USE_ICONV=0
-    fi
-else
-    USE_ICONV=0
 fi
 
-# === УСТАНОВКА НУЖНЫХ ШРИФТОВ ДЛЯ РУССКОГО ЯЗЫКА ===
-
-install_russian_fonts() {
-    print_info "Установка шрифтов для русского языка..."
-    
-    # Проверяем, установлены ли шрифты
-    local fonts_needed=0
-    
-    if ! pacman -Qs ttf-dejavu &>/dev/null; then
-        fonts_needed=1
-    fi
-    if ! pacman -Qs ttf-liberation &>/dev/null; then
-        fonts_needed=1
-    fi
-    if ! pacman -Qs terminus-font &>/dev/null; then
-        fonts_needed=1
-    fi
-    
-    if [ $fonts_needed -eq 1 ]; then
-        print_info "Устанавливаем шрифты для корректного отображения русского языка..."
-        pacman -S --noconfirm ttf-dejavu ttf-liberation terminus-font 2>/dev/null || true
-        print_success "Шрифты установлены"
-    else
-        print_success "Все необходимые шрифты уже установлены"
-    fi
-}
+# Убеждаемся, что терминал использует UTF-8
+if [ -t 1 ]; then
+    stty iutf8 2>/dev/null || true
+fi
 
 # === ЦВЕТА ДЛЯ ВЫВОДА ===
 
-# Проверка поддержки цветов
 if [ -t 1 ] && [ "$TERM" != "dumb" ] && [ "$TERM" != "linux" ]; then
     RED='\033[0;31m'
     GREEN='\033[0;32m'
@@ -116,50 +51,40 @@ if [ -t 1 ] && [ "$TERM" != "dumb" ] && [ "$TERM" != "linux" ]; then
     BOLD='\033[1m'
     NC='\033[0m'
 else
-    # Для консоли без цветов
     RED=''; GREEN=''; YELLOW=''; BLUE=''
     MAGENTA=''; CYAN=''; WHITE=''; BOLD=''; NC=''
 fi
 
-# === ФУНКЦИИ ВЫВОДА ===
-
-print_rus() {
-    local msg="$1"
-    if [ $USE_ICONV -eq 1 ] && command -v iconv &>/dev/null; then
-        echo "$msg" | iconv -f UTF-8 -t UTF-8 2>/dev/null || echo "$msg"
-    else
-        echo "$msg"
-    fi
-}
+# === ФУНКЦИИ ВЫВОДА (БЕЗ ТРАНСЛИТЕРАЦИИ) ===
 
 print_header() {
     echo -e "\n${BLUE}═══════════════════════════════════════════════════════${NC}"
-    echo -e "${CYAN}  $(print_rus "$1")${NC}"
+    echo -e "${CYAN}  $1${NC}"
     echo -e "${BLUE}═══════════════════════════════════════════════════════${NC}\n"
 }
 
 print_step() {
-    echo -e "\n${GREEN}▶ $(print_rus "$1")${NC}"
+    echo -e "\n${GREEN}▶ $1${NC}"
 }
 
 print_error() {
-    echo -e "${RED}✗ $(print_rus "$1")${NC}" >&2
+    echo -e "${RED}✗ $1${NC}" >&2
 }
 
 print_success() {
-    echo -e "${GREEN}✓ $(print_rus "$1")${NC}"
+    echo -e "${GREEN}✓ $1${NC}"
 }
 
 print_info() {
-    echo -e "${YELLOW}ℹ $(print_rus "$1")${NC}"
+    echo -e "${YELLOW}ℹ $1${NC}"
 }
 
 print_warning() {
-    echo -e "${MAGENTA}⚠ $(print_rus "$1")${NC}"
+    echo -e "${MAGENTA}⚠ $1${NC}"
 }
 
 print_menu() {
-    echo -e "${CYAN}$(print_rus "$1")${NC}"
+    echo -e "${CYAN}$1${NC}"
 }
 
 # === ФУНКЦИИ ВВОДА ===
@@ -170,11 +95,11 @@ get_choice() {
     local result
     
     if [ -n "$default" ]; then
-        echo -ne "${YELLOW}$(print_rus "$prompt") [$default]: ${NC}"
+        echo -ne "${YELLOW}$prompt [$default]: ${NC}"
         read -r result
         result=${result:-$default}
     else
-        echo -ne "${YELLOW}$(print_rus "$prompt"): ${NC}"
+        echo -ne "${YELLOW}$prompt: ${NC}"
         read -r result
     fi
     echo "$result"
@@ -187,22 +112,22 @@ get_yes_no() {
     
     while true; do
         if [ "$default" = "y" ]; then
-            echo -ne "${YELLOW}$(print_rus "$prompt") [Y/n]: ${NC}"
+            echo -ne "${YELLOW}$prompt [Y/n]: ${NC}"
             read -r result
             result=${result:-y}
         elif [ "$default" = "n" ]; then
-            echo -ne "${YELLOW}$(print_rus "$prompt") [y/N]: ${NC}"
+            echo -ne "${YELLOW}$prompt [y/N]: ${NC}"
             read -r result
             result=${result:-n}
         else
-            echo -ne "${YELLOW}$(print_rus "$prompt") [y/n]: ${NC}"
+            echo -ne "${YELLOW}$prompt [y/n]: ${NC}"
             read -r result
         fi
         
         case "$result" in
             y|Y|yes|Yes|YES|д|Д|да|Да|ДА) return 0 ;;
             n|N|no|No|NO|н|Н|нет|Нет|НЕТ) return 1 ;;
-            *) echo -e "${RED}$(print_rus "Пожалуйста, введите y или n")${NC}" ;;
+            *) echo -e "${RED}Пожалуйста, введите y или n${NC}" ;;
         esac
     done
 }
@@ -212,6 +137,7 @@ get_yes_no() {
 setup_wifi() {
     print_header "НАСТРОЙКА WI-FI"
     
+    # Проверяем, есть ли интернет
     if ping -c 1 archlinux.org &>/dev/null || ping -c 1 1.1.1.1 &>/dev/null; then
         print_success "Интернет уже подключен"
         if get_yes_no "Хотите настроить Wi-Fi заново?" "n"; then
@@ -224,11 +150,11 @@ setup_wifi() {
 }
 
 wifi_menu() {
-    echo -e "${CYAN}$(print_rus "Выберите способ подключения к Wi-Fi:")${NC}"
-    echo "  1) $(print_rus "Через iwctl (рекомендуется)")"
-    echo "  2) $(print_rus "Через nmtui (NetworkManager)")"
-    echo "  3) $(print_rus "Ручной ввод команд")"
-    echo "  4) $(print_rus "Пропустить (если есть Ethernet)")"
+    echo -e "${CYAN}Выберите способ подключения к Wi-Fi:${NC}"
+    echo "  1) Через iwctl (рекомендуется)"
+    echo "  2) Через nmtui (NetworkManager)"
+    echo "  3) Ручной ввод команд"
+    echo "  4) Пропустить (если есть Ethernet)"
     
     local choice=$(get_choice "Выберите вариант [1-4]" "1")
     
@@ -244,7 +170,7 @@ wifi_menu() {
 wifi_iwctl() {
     print_step "Настройка Wi-Fi через iwctl"
     
-    # Проверяем, запущен ли iwd
+    # Проверяем iwd
     if ! systemctl is-active --quiet iwd 2>/dev/null; then
         print_info "Запуск службы iwd..."
         systemctl start iwd 2>/dev/null || {
@@ -255,7 +181,7 @@ wifi_iwctl() {
     fi
     
     # Получаем список устройств
-    echo -e "${CYAN}$(print_rus "Доступные Wi-Fi устройства:")${NC}"
+    echo -e "${CYAN}Доступные Wi-Fi устройства:${NC}"
     iwctl device list 2>/dev/null || echo "Нет доступных устройств"
     echo ""
     
@@ -270,7 +196,7 @@ wifi_iwctl() {
     sleep 10
     
     # Показываем сети
-    echo -e "${CYAN}$(print_rus "Доступные сети Wi-Fi:")${NC}"
+    echo -e "${CYAN}Доступные сети Wi-Fi:${NC}"
     iwctl station "$device" get-networks 2>/dev/null || echo "Нет доступных сетей"
     echo ""
     
@@ -287,7 +213,6 @@ wifi_iwctl() {
     if iwctl station "$device" connect "$ssid" 2>/dev/null; then
         print_success "Подключено к $ssid"
         
-        # Проверяем подключение
         sleep 5
         if ping -c 1 archlinux.org &>/dev/null || ping -c 1 1.1.1.1 &>/dev/null; then
             print_success "Интернет работает"
@@ -309,7 +234,6 @@ wifi_iwctl() {
 wifi_nmtui() {
     print_step "Настройка Wi-Fi через nmtui"
     
-    # Проверяем, установлен ли NetworkManager
     if ! command -v nmtui &>/dev/null; then
         print_info "Установка NetworkManager..."
         pacman -S --noconfirm networkmanager 2>/dev/null || {
@@ -318,7 +242,6 @@ wifi_nmtui() {
         }
     fi
     
-    # Запускаем NetworkManager
     systemctl start NetworkManager 2>/dev/null || {
         print_warning "Не удалось запустить NetworkManager"
         if get_yes_no "Попробовать через iwctl?" "y"; then
@@ -330,7 +253,6 @@ wifi_nmtui() {
     print_info "Запуск nmtui..."
     nmtui
     
-    # Проверяем подключение
     if ping -c 1 archlinux.org &>/dev/null || ping -c 1 1.1.1.1 &>/dev/null; then
         print_success "Интернет работает"
         return 0
@@ -345,7 +267,7 @@ wifi_nmtui() {
 wifi_manual() {
     print_step "Ручная настройка Wi-Fi"
     
-    echo -e "${YELLOW}$(print_rus "Введите следующие команды:")${NC}"
+    echo -e "${YELLOW}Введите следующие команды:${NC}"
     echo "  iwctl"
     echo "  device list"
     echo "  station <device> scan"
@@ -353,16 +275,15 @@ wifi_manual() {
     echo "  station <device> connect 'SSID'"
     echo "  exit"
     echo ""
-    echo -e "${CYAN}$(print_rus "Или используйте:")${NC}"
+    echo -e "${CYAN}Или используйте:${NC}"
     echo "  nmcli device wifi list"
     echo "  nmcli device wifi connect 'SSID' password 'PASSWORD'"
     echo ""
     
     if get_yes_no "Хотите ввести команды вручную?" "y"; then
-        echo -e "${YELLOW}$(print_rus "Выход из оболочки - Ctrl+D или exit")${NC}"
+        echo -e "${YELLOW}Выход из оболочки - Ctrl+D или exit${NC}"
         bash
         
-        # Проверяем подключение
         if ping -c 1 archlinux.org &>/dev/null || ping -c 1 1.1.1.1 &>/dev/null; then
             print_success "Интернет работает"
             return 0
@@ -386,7 +307,7 @@ check_root() {
     fi
 }
 
-check_internet_final() {
+check_internet() {
     print_step "Проверка подключения к интернету..."
     
     local tries=0
@@ -404,14 +325,14 @@ check_internet_final() {
     echo ""
     
     print_error "Нет подключения к интернету!"
-    echo -e "${YELLOW}$(print_rus "Попробуйте настроить Wi-Fi вручную:")${NC}"
+    echo -e "${YELLOW}Попробуйте настроить Wi-Fi вручную:${NC}"
     echo "  1) iwctl"
     echo "  2) nmtui"
     echo "  3) nmcli"
     
     if get_yes_no "Хотите попробовать настроить Wi-Fi снова?" "y"; then
         wifi_menu
-        check_internet_final
+        check_internet
     else
         print_error "Установка невозможна без интернета"
         exit 1
@@ -451,7 +372,7 @@ check_disk_space() {
 select_disk() {
     print_header "ВЫБОР ДИСКА"
     
-    echo -e "${CYAN}$(print_rus "Доступные диски:")${NC}"
+    echo -e "${CYAN}Доступные диски:${NC}"
     echo ""
     lsblk -o NAME,SIZE,TYPE,MODEL,MOUNTPOINT | grep -E "disk|part" | nl -w2 -s'. '
     echo ""
@@ -462,7 +383,7 @@ select_disk() {
         
         if [ ! -b "$DISK_PATH" ]; then
             print_error "Диск $DISK_PATH не найден!"
-            echo -e "${CYAN}$(print_rus "Доступные диски:")${NC}"
+            echo -e "${CYAN}Доступные диски:${NC}"
             lsblk -d -o NAME,SIZE,TYPE,MODEL | grep -v "loop"
             continue
         fi
@@ -483,10 +404,10 @@ select_disk() {
 select_partition_scheme() {
     print_header "РАЗМЕТКА ДИСКА"
     
-    echo -e "${YELLOW}$(print_rus "Выберите схему разметки:")${NC}"
-    echo "  1) $(print_rus "Простая") (EFI + $(print_rus "корневой раздел"))"
-    echo "  2) $(print_rus "С отдельным /home") (EFI + / + /home)"
-    echo "  3) $(print_rus "Ручная разметка") (cfdisk)"
+    echo -e "${YELLOW}Выберите схему разметки:${NC}"
+    echo "  1) Простая (EFI + корневой раздел)"
+    echo "  2) С отдельным /home (EFI + / + /home)"
+    echo "  3) Ручная разметка (cfdisk)"
     
     PART_SCHEME=$(get_choice "Выберите вариант [1-3]" "1")
     
@@ -543,7 +464,7 @@ select_partition_scheme() {
             print_info "Запускаем ручную разметку через cfdisk"
             cfdisk "$DISK_PATH"
             
-            echo -e "\n${CYAN}$(print_rus "Введите имена созданных разделов:")${NC}"
+            echo -e "\n${CYAN}Введите имена созданных разделов:${NC}"
             EFI_PART=$(get_choice "EFI раздел (например: ${DISK}1)" "")
             ROOT_PART=$(get_choice "Корневой раздел (например: ${DISK}2)" "")
             
@@ -595,23 +516,18 @@ mount_partitions() {
 select_packages() {
     print_header "ВЫБОР ПАКЕТОВ"
     
-    # Базовые пакеты (добавляем шрифты для русского языка)
     BASE_PKGS="base base-devel linux linux-firmware linux-headers nano vim konsole bash-completion grub efibootmgr networkmanager"
-    
-    # Шрифты для русского языка
     FONT_PKGS="ttf-ubuntu-font-family ttf-hack ttf-dejavu ttf-opensans"
     
     print_info "Базовые пакеты будут установлены автоматически:"
     echo "  $BASE_PKGS"
     echo "  $FONT_PKGS"
     
-    # Дисплейный сервер
     if get_yes_no "Установить Xorg (дисплейный сервер)?" "y"; then
         EXTRA_PKGS="$EXTRA_PKGS xorg"
     fi
     
-    # Видеодрайверы
-    echo -e "\n${CYAN}$(print_rus "Выберите видеодрайвер:")${NC}"
+    echo -e "\n${CYAN}Выберите видеодрайвер:${NC}"
     echo "  1) Intel"
     echo "  2) NVIDIA"
     echo "  3) AMD/ATI"
@@ -627,8 +543,7 @@ select_packages() {
         *) print_info "Универсальный драйвер (используется встроенный)" ;;
     esac
     
-    # Дисплейный менеджер
-    echo -e "\n${CYAN}$(print_rus "Выберите дисплейный менеджер:")${NC}"
+    echo -e "\n${CYAN}Выберите дисплейный менеджер:${NC}"
     echo "  1) SDDM (рекомендуется для KDE)"
     echo "  2) GDM (рекомендуется для GNOME)"
     echo "  3) LightDM (легкий и настраиваемый)"
@@ -644,8 +559,7 @@ select_packages() {
         *) print_info "Дисплейный менеджер не будет установлен" ;;
     esac
     
-    # Окружение рабочего стола
-    echo -e "\n${CYAN}$(print_rus "Выберите окружение рабочего стола:")${NC}"
+    echo -e "\n${CYAN}Выберите окружение рабочего стола:${NC}"
     echo "  1) GNOME"
     echo "  2) KDE Plasma"
     echo "  3) Cinnamon"
@@ -669,12 +583,10 @@ select_packages() {
         *) print_info "Окружение рабочего стола не будет установлено" ;;
     esac
     
-    # Звук
     if get_yes_no "Установить звуковую систему (PulseAudio)?" "y"; then
         EXTRA_PKGS="$EXTRA_PKGS pulseaudio pulseaudio-alsa alsa-utils pavucontrol"
     fi
     
-    # Дополнительные пакеты
     if get_yes_no "Установить дополнительные полезные пакеты?" "y"; then
         EXTRA_PKGS="$EXTRA_PKGS git wget curl htop neofetch firefox"
     fi
@@ -708,61 +620,42 @@ configure_system() {
 
 # === НАСТРОЙКА РУССКОГО ЯЗЫКА ===
 
-# Установка русской локали
 echo "Настройка локалей..."
 sed -i 's/^#\(en_US.UTF-8\)/\1/' /etc/locale.gen
 sed -i 's/^#\(ru_RU.UTF-8\)/\1/' /etc/locale.gen
-sed -i 's/^#\(ru_UA.UTF-8\)/\1/' /etc/locale.gen
 locale-gen
 
-# Настройка системной локали
 echo "LANG=ru_RU.UTF-8" > /etc/locale.conf
 echo "LANGUAGE=ru_RU.UTF-8" >> /etc/locale.conf
 echo "LC_ALL=ru_RU.UTF-8" >> /etc/locale.conf
-echo "LC_CTYPE=ru_RU.UTF-8" >> /etc/locale.conf
-echo "LC_NUMERIC=ru_RU.UTF-8" >> /etc/locale.conf
-echo "LC_TIME=ru_RU.UTF-8" >> /etc/locale.conf
-echo "LC_COLLATE=ru_RU.UTF-8" >> /etc/locale.conf
-echo "LC_MONETARY=ru_RU.UTF-8" >> /etc/locale.conf
-echo "LC_MESSAGES=ru_RU.UTF-8" >> /etc/locale.conf
 
-# Настройка клавиатуры
 echo "KEYMAP=ru" > /etc/vconsole.conf
 echo "FONT=cyr-sun16" >> /etc/vconsole.conf
-echo "FONT_MAP=8859-5" >> /etc/vconsole.conf
 
-# Часовой пояс
 echo "Настройка часового пояса..."
 ln -sf /usr/share/zoneinfo/Europe/Moscow /etc/localtime
 hwclock --systohc
 
-# Имя хоста
 echo "Введите имя компьютера:"
 read HOSTNAME
 echo "$HOSTNAME" > /etc/hostname
 
-# Настройка hosts
 cat > /etc/hosts << HOSTS
 127.0.0.1 localhost
 ::1 localhost
 127.0.1.1 $HOSTNAME.localdomain $HOSTNAME
 HOSTS
 
-# Пароль root
 echo "Установка пароля root:"
 passwd
 
-# Создание пользователя
 echo "Создание пользователя:"
 read -p "Введите имя пользователя: " USERNAME
 useradd -m -G wheel,audio,video,storage,optical "$USERNAME"
 echo "Установка пароля для $USERNAME:"
 passwd "$USERNAME"
 
-# Настройка sudo
 echo "%wheel ALL=(ALL) ALL" >> /etc/sudoers
-
-# Включение NetworkManager
 systemctl enable NetworkManager
 
 EOF
@@ -778,26 +671,20 @@ install_bootloader() {
     cat > /mnt/root/bootloader.sh << EOF
 #!/bin/bash
 
-# Установка GRUB
 grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=GRUB
 
-# Настройка GRUB (убираем quiet)
 sed -i 's/quiet//g' /etc/default/grub
 
-# Добавляем поддержку русского языка в GRUB
 echo "GRUB_TERMINAL_INPUT=console" >> /etc/default/grub
 echo "GRUB_TERMINAL_OUTPUT=console" >> /etc/default/grub
 echo "GRUB_FONT=/usr/share/grub/unicode.pf2" >> /etc/default/grub
 
-# Генерация конфига
 grub-mkconfig -o /boot/grub/grub.cfg
 
-# Включение дисплейного менеджера
 if [ -n "$DM_NAME" ]; then
     systemctl enable $DM_NAME
 fi
 
-# Включение служб
 systemctl enable NetworkManager
 
 EOF
@@ -806,59 +693,45 @@ EOF
     arch-chroot /mnt /root/bootloader.sh
 }
 
-# === ОСНОВНАЯ ФУНКЦИЯ УСТАНОВКИ ===
+# === ОСНОВНАЯ ФУНКЦИЯ ===
 
 main() {
     clear
     
     print_header "ARCH LINUX INTERACTIVE INSTALLER"
-    echo -e "${CYAN}$(print_rus "Полная поддержка русского языка")${NC}"
-    echo -e "${YELLOW}$(print_rus "Внимание: Скрипт запускается от root!")${NC}\n"
+    echo -e "${CYAN}Полная поддержка русского языка${NC}"
+    echo -e "${YELLOW}Внимание: Скрипт запускается от root!${NC}\n"
     
-    # Проверка прав root
     check_root
     
-    # Настройка Wi-Fi
     setup_wifi
     
-    # Финальная проверка интернета
-    check_internet_final
+    check_internet
     
-    # Проверка UEFI
     check_uefi
     
-    # Выбор диска
     select_disk
     
-    # Выбор схемы разметки
     select_partition_scheme
     
-    # Форматирование
     format_partitions
     
-    # Монтирование
     mount_partitions
     
-    # Выбор пакетов
     select_packages
     
-    # Установка системы
     install_system
     
-    # Генерация fstab
     generate_fstab
     
-    # Настройка системы
     configure_system
     
-    # Установка загрузчика
     install_bootloader
     
-    # Завершение
     print_header "УСТАНОВКА ЗАВЕРШЕНА!"
     print_success "Arch Linux успешно установлен с поддержкой русского языка!"
     
-    echo -e "${CYAN}$(print_rus "Параметры установки:")${NC}"
+    echo -e "${CYAN}Параметры установки:${NC}"
     echo "  Диск: $DISK_PATH"
     echo "  EFI раздел: $EFI_PART"
     echo "  Корневой раздел: $ROOT_PART"
@@ -866,16 +739,14 @@ main() {
     [ -n "$DE_NAME" ] && echo "  Окружение: $DE_NAME"
     [ -n "$DM_NAME" ] && echo "  Дисплейный менеджер: $DM_NAME"
     
-    echo -e "\n${YELLOW}$(print_rus "Чтобы завершить установку и перезагрузиться:")${NC}"
+    echo -e "\n${YELLOW}Чтобы завершить установку и перезагрузиться:${NC}"
     echo "  1. exit"
     echo "  2. umount -R /mnt"
     echo "  3. reboot"
     
-    echo -e "\n${GREEN}$(print_rus "Не забудьте извлечь установочный носитель при перезагрузке!")${NC}"
+    echo -e "\n${GREEN}Не забудьте извлечь установочный носитель при перезагрузке!${NC}"
     
-    # Очистка
     rm -f /mnt/root/setup.sh /mnt/root/bootloader.sh
 }
 
-# Запуск основной функции
 main
